@@ -47,7 +47,11 @@ ns-process-data video \
   --num-frames-target "$NUM_FRAMES"
 
 echo "=== [2/3] Training Gaussian Splat (splatfacto) for $MAX_ITERS iterations ==="
-ns-train splatfacto \
+# TORCHDYNAMO_DISABLE avoids a torch.compile/inductor crash on some setups where
+# a pip-bundled nvcc binary isn't marked executable (PermissionError: 'nvcc'),
+# which otherwise masks the real underlying compile error. splatfacto runs fine
+# in eager mode, just somewhat slower per-iteration.
+TORCHDYNAMO_DISABLE=1 ns-train splatfacto \
   --data "$DATA_DIR" \
   --output-dir "$OUTPUT_DIR" \
   --experiment-name "$SCENE_NAME" \
