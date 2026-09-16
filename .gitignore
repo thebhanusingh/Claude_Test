@@ -1,0 +1,13 @@
+# Video/data pipeline artifacts (large binaries, don't commit)
+/data/
+/outputs/
+/exports/
+*.mp4
+*.mov
+*.mkv
+*.avi
+
+# Python / conda
+__pycache__/
+*.pyc
+.venv/
