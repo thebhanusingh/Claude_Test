@@ -2,6 +2,9 @@
 /data/
 /outputs/
 /exports/
+/data_gaussianshader/
+/outputs_relightable/
+/third_party/
 *.mp4
 *.mov
 *.mkv
