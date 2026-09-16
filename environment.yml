@@ -9,6 +9,10 @@ dependencies:
   # "Unrecognized option 'vsync'" during frame extraction.
   - ffmpeg=6.*
   - colmap
+  # open3d (a transitive nerfstudio dependency, imported even though we don't use
+  # its Metashape/RealSense features) needs libusb at runtime; its pip wheel
+  # doesn't bundle it, causing "libusb-1.0.so.0: cannot open shared object file".
+  - libusb
 # PyTorch is deliberately NOT pinned here. It's installed by scripts/setup_env.sh
 # via pip using the CUDA 12.8+ wheels (https://download.pytorch.org/whl/cu128),
 # which support Blackwell GPUs (RTX PRO Blackwell, RTX 50-series -- sm_120) and
