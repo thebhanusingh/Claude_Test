@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # One-time environment setup for the video -> Gaussian Splat pipeline.
+# Written to work across different lab machines/GPUs (laptop Ada cards up
+# through workstation Blackwell cards) without editing this script per machine.
 #
 # Requirements before running this:
 #   - Linux, or Windows via WSL2 (nerfstudio/COLMAP do not run natively on Windows)
-#   - An NVIDIA GPU with a recent driver (check with `nvidia-smi`)
-#   - conda or mamba installed (https://docs.conda.io/en/latest/miniconda.html)
+#   - An NVIDIA GPU with a driver already installed (usually pre-installed by IT
+#     on lab machines -- do not try to install/replace the driver yourself)
+#   - conda or mamba installed in your OWN user space (no admin rights needed:
+#     https://github.com/conda-forge/miniforge)
 #
 # Usage:
 #   ./scripts/setup_env.sh
@@ -15,7 +19,20 @@ if ! command -v nvidia-smi >/dev/null 2>&1; then
   echo "ERROR: nvidia-smi not found. An NVIDIA GPU + driver is required to train a Gaussian Splat." >&2
   exit 1
 fi
-nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+
+echo "==> Detected GPU(s):"
+nvidia-smi --query-gpu=name,memory.total,driver_version,compute_cap --format=csv,noheader
+
+DRIVER_MAJOR="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits | head -1 | cut -d. -f1)"
+if [[ "$DRIVER_MAJOR" -lt 570 ]]; then
+  echo ""
+  echo "WARNING: driver version is $DRIVER_MAJOR, below the R570 minimum for Blackwell GPUs" >&2
+  echo "         (RTX PRO 4500/5000/6000 Blackwell, RTX 50-series). Older GPUs generally still" >&2
+  echo "         work fine on this driver, but Blackwell cards will fail to run CUDA workloads." >&2
+  echo "         On a lab machine, ask IT to update the driver -- don't attempt it yourself" >&2
+  echo "         without permission, it typically needs admin rights and can affect other users." >&2
+  echo ""
+fi
 
 CONDA_BIN="conda"
 if command -v mamba >/dev/null 2>&1; then
@@ -27,15 +44,35 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "==> Creating conda environment 'gsplat' from environment.yml (this can take a while)"
 "$CONDA_BIN" env create -f "$REPO_ROOT/environment.yml" || "$CONDA_BIN" env update -f "$REPO_ROOT/environment.yml"
 
-echo "==> Installing nerfstudio (provides ns-process-data, ns-train splatfacto, ns-export gaussian-splat)"
 # shellcheck disable=SC1091
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate gsplat
 pip install --upgrade pip
+
+echo "==> Installing nerfstudio (provides ns-process-data, ns-train splatfacto, ns-export gaussian-splat)"
 pip install nerfstudio
+
+echo "==> Installing PyTorch with CUDA 12.8 wheels (overrides whatever nerfstudio pulled in above)"
+echo "    This is required for Blackwell (sm_120) GPUs; it also runs fine on older Ada/Ampere cards"
+echo "    as long as the driver is reasonably current (see warning above if any)."
+pip install --upgrade --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+
+echo "==> Verifying GPU is visible to PyTorch"
+python -c "
+import torch
+print('torch:', torch.__version__)
+print('cuda available:', torch.cuda.is_available())
+if torch.cuda.is_available():
+    print('device:', torch.cuda.get_device_name(0))
+    print('compute capability:', torch.cuda.get_device_capability(0))
+"
 
 echo ""
 echo "Setup complete. Next time, activate the environment with:"
 echo "  conda activate gsplat"
 echo "Then run:"
 echo "  ./scripts/make_splat.sh /path/to/video.mp4 my_scene"
+echo ""
+echo "NOTE: if the ns-viewer or ns-train crashes with a torch/CUDA error despite the check above"
+echo "      passing, this is a known rough edge on very new (Blackwell) GPUs with nerfstudio's"
+echo "      own pinned dependencies -- see https://github.com/nerfstudio-project/nerfstudio/issues/3732"

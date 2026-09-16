@@ -1,14 +1,15 @@
 name: gsplat
 channels:
-  - pytorch
-  - nvidia
   - conda-forge
 dependencies:
   - python=3.10
   - pip
   - ffmpeg
   - colmap
-  - pytorch
-  - torchvision
-  - torchaudio
-  - pytorch-cuda=11.8
+# PyTorch is deliberately NOT pinned here. It's installed by scripts/setup_env.sh
+# via pip using the CUDA 12.8+ wheels (https://download.pytorch.org/whl/cu128),
+# which support Blackwell GPUs (RTX PRO Blackwell, RTX 50-series -- sm_120) and
+# remain backward compatible with older Ada/Ampere cards, as long as the NVIDIA
+# driver is new enough (R570+ for Blackwell; most driver versions from the last
+# couple of years are fine for older GPUs). This keeps one setup path working
+# across whatever GPU a given lab machine has.

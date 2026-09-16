@@ -9,6 +9,9 @@ for structure-from-motion.
 **This requires a machine with an NVIDIA GPU** (CUDA). It will not run in this cloud session — clone this repo and run
 it locally, e.g. on your university machine (Linux, or Windows via WSL2).
 
+Working across a university lab machine and also want this splat in Blender/Unreal Engine, without admin rights?
+See [`docs/lab-setup.md`](docs/lab-setup.md).
+
 ### 1. Set up the environment (once)
 
 Requires [conda](https://docs.conda.io/en/latest/miniconda.html) (or mamba) and an NVIDIA driver already installed.
