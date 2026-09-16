@@ -57,6 +57,14 @@ echo "    This is required for Blackwell (sm_120) GPUs; it also runs fine on old
 echo "    as long as the driver is reasonably current (see warning above if any)."
 pip install --upgrade --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
+echo "==> Ensuring any pip-bundled nvcc binaries are executable"
+# gsplat (nerfstudio's splatfacto rasterizer) and torch.compile both shell out to
+# 'nvcc' at runtime. The nvcc bundled by the 'cuda-toolkit'/'nvidia-cuda-nvcc-cu12'
+# pip packages has been observed installed without the executable bit set, causing
+# "PermissionError: [Errno 13] Permission denied: 'nvcc'" the first time anything
+# tries to run it. Fix proactively rather than waiting to hit it mid-training.
+find "$CONDA_PREFIX" -type f -name nvcc -exec chmod +x {} \; 2>/dev/null || true
+
 echo "==> Verifying GPU is visible to PyTorch"
 python -c "
 import torch
