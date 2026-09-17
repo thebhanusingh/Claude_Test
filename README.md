@@ -12,6 +12,10 @@ it locally, e.g. on your university machine (Linux, or Windows via WSL2).
 Working across a university lab machine and also want this splat in Blender/Unreal Engine, without admin rights?
 See [`docs/lab-setup.md`](docs/lab-setup.md).
 
+Hit an error running any of this (WSL/conda/ffmpeg/COLMAP/nvcc issues, GitHub auth, keeping a long training run
+alive)? Check [`docs/troubleshooting.md`](docs/troubleshooting.md) first — it covers every issue hit setting this
+up from scratch, with the actual fix for each.
+
 ### 1. Set up the environment (once)
 
 Requires [conda](https://docs.conda.io/en/latest/miniconda.html) (or mamba) and an NVIDIA driver already installed.
