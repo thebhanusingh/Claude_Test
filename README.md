@@ -9,54 +9,26 @@ for structure-from-motion.
 **This requires a machine with an NVIDIA GPU** (CUDA). It will not run in this cloud session — clone this repo and run
 it locally, e.g. on your university machine (Linux, or Windows via WSL2).
 
-Working across a university lab machine and also want this splat in Blender/Unreal Engine, without admin rights?
-See [`docs/lab-setup.md`](docs/lab-setup.md).
+**Start here: [`docs/quickstart.md`](docs/quickstart.md)** — the complete, ordered, copy-paste-ready path from
+"I have a video" to "viewing the splat in Blender," including video capture tips, one-time machine setup (WSL2 on
+Windows, conda, CUDA toolkit), and the actual run commands with the settings that worked. Written so a fresh run
+doesn't need to be re-derived from scratch each time.
 
-Hit an error running any of this (WSL/conda/ffmpeg/COLMAP/nvcc issues, GitHub auth, keeping a long training run
-alive)? Check [`docs/troubleshooting.md`](docs/troubleshooting.md) first — it covers every issue hit setting this
-up from scratch, with the actual fix for each.
+Other docs:
+- [`docs/lab-setup.md`](docs/lab-setup.md) — working across a university lab machine, and getting the splat into
+  Blender/Unreal Engine, without admin rights.
+- [`docs/troubleshooting.md`](docs/troubleshooting.md) — every issue hit setting this up from scratch (WSL/conda/
+  ffmpeg/COLMAP/nvcc/PyTorch issues, GitHub auth, keeping a long training run alive), with the actual fix for each.
 
-### 1. Set up the environment (once)
-
-Requires [conda](https://docs.conda.io/en/latest/miniconda.html) (or mamba) and an NVIDIA driver already installed.
-
-```bash
-git clone <this-repo>
-cd Claude_Test
-./scripts/setup_env.sh
-```
-
-This creates a `gsplat` conda environment with PyTorch (CUDA 11.8), ffmpeg, COLMAP, and nerfstudio.
-
-### 2. Generate a splat from a video
+### Quick reference
 
 ```bash
+git clone <this-repo> && cd Claude_Test
+./scripts/setup_env.sh                                       # once per machine
 conda activate gsplat
-./scripts/make_splat.sh /path/to/video.mp4 my_scene
+MAX_JOBS=2 ./scripts/make_splat.sh /path/to/video.mp4 my_scene   # generates exports/my_scene/splat.ply
 ```
-
-What it does:
-1. **`ns-process-data video`** — extracts frames from the video and runs COLMAP to estimate camera poses
-   and a sparse point cloud (`data/my_scene/`).
-2. **`ns-train splatfacto`** — trains the Gaussian Splat (default 30,000 iterations; pass a third argument
-   to override, e.g. `./scripts/make_splat.sh video.mp4 my_scene 15000`). A live preview is served at
-   `http://localhost:7007` while training runs.
-3. **`ns-export gaussian-splat`** — exports the trained splat to a `.ply` file in `exports/my_scene/`.
-
-### 3. View the result
-
-- During/after training: `ns-viewer --load-config outputs/my_scene/splatfacto/<timestamp>/config.yml`
-- The exported `.ply`: drag it into a web viewer such as [SuperSplat](https://playcanvas.com/supersplat/editor).
-
-### Tips for good source video
-
-- Move slowly around the subject, overlapping each frame with the last (orbit the object/room rather than
-  panning past it once).
-- Good, even lighting; avoid strong motion blur.
-- 20–60 seconds of footage is usually plenty; `NUM_FRAMES` (env var, default 300) controls how many frames
-  are sampled from it, e.g. `NUM_FRAMES=500 ./scripts/make_splat.sh video.mp4 my_scene`.
-- If COLMAP fails to register most images, the camera motion/overlap is usually the issue — reshoot with
-  more overlap between frames.
+See `docs/quickstart.md` for what each step does, WSL2/Windows setup, and why `MAX_JOBS=2`.
 
 ### Repo layout
 
