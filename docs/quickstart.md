@@ -110,19 +110,27 @@ frames/COLMAP if `data/<scene>/colmap/sparse/0/cameras.bin` already exists —
 useful when only the training step needs retrying. **Always `git pull` after
 any repo fix lands** before assuming a retry has it.
 
-## 3. Get the result into Blender
+## 3. View / use the result
 
-Output lands at `~/Claude_Test/exports/<scene_name>/splat.ply`. From
-Windows, that's reachable at:
+**For just looking at it: prefer the nerfstudio viewer (localhost:7007) over
+a web `.ply` viewer like SuperSplat** — confirmed better/more familiar
+navigation controls than SuperSplat's orbit/pan scheme. It closes
+automatically when training finishes (`--viewer.quit-on-train-completion
+True`); reopen it against the trained config:
+```bash
+ns-viewer --load-config outputs/<scene_name>/splatfacto/<timestamp>/config.yml
 ```
-\\wsl.localhost\Ubuntu\home\<you>\Claude_Test\exports\<scene_name>\splat.ply
+Then open `http://localhost:7007` in a Windows browser (WSL2 forwards this
+automatically). Find `<timestamp>` with:
+```bash
+ls outputs/<scene_name>/splatfacto/
 ```
 
-**Don't use a web viewer (e.g. SuperSplat) if you already know Blender** —
-its orbit/pan controls don't match Maya/Blender/UE muscle memory, and
-nerfstudio's auto-picked scene orientation can leave the default focal point
-somewhere unhelpful. Load it in Blender instead, using controls you already
-know:
+**For editing/compositing/importing into a larger scene**, use the exported
+`.ply` at `~/Claude_Test/exports/<scene_name>/splat.ply` (Windows path:
+`\\wsl.localhost\Ubuntu\home\<you>\Claude_Test\exports\<scene_name>\splat.ply`).
+Load it in Blender rather than a web viewer if you already know Blender's
+navigation:
 
 1. Get [KIRI Engine's "3DGS Render" addon](https://github.com/Kiri-Innovation/3dgs-render-blender-addon)
    (free, open source) — download the release zip.
