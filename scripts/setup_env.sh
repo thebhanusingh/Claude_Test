@@ -57,6 +57,16 @@ echo "    This is required for Blackwell (sm_120) GPUs; it also runs fine on old
 echo "    as long as the driver is reasonably current (see warning above if any)."
 pip install --upgrade --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 
+echo "==> Patching nerfstudio checkpoint loading for PyTorch 2.6+ weights_only default"
+# PyTorch 2.6 changed torch.load's default weights_only from False to True, which
+# blocks unpickling the numpy scalar type nerfstudio's checkpoints use, breaking
+# ns-export/ns-eval with "Unsupported global: GLOBAL numpy.core.multiarray.scalar".
+# Safe here since we're only ever loading our own freshly-trained checkpoints.
+EVAL_UTILS="$CONDA_PREFIX/lib/python3.10/site-packages/nerfstudio/utils/eval_utils.py"
+if [[ -f "$EVAL_UTILS" ]]; then
+  sed -i 's/torch\.load(load_path, map_location="cpu")/torch.load(load_path, map_location="cpu", weights_only=False)/' "$EVAL_UTILS"
+fi
+
 echo "==> Ensuring any pip-bundled nvcc binaries are executable"
 # gsplat (nerfstudio's splatfacto rasterizer) and torch.compile both shell out to
 # 'nvcc' at runtime. The nvcc bundled by the 'cuda-toolkit'/'nvidia-cuda-nvcc-cu12'

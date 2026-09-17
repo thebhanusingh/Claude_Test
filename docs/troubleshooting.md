@@ -62,6 +62,30 @@ source ~/.bashrc
 sudo apt update && sudo apt install -y build-essential
 ```
 
+## Export fails after a fully successful training run
+
+**`ns-export gaussian-splat` — `_pickle.UnpicklingError: Weights only load
+failed` / `Unsupported global: GLOBAL numpy.core.multiarray.scalar`**: this
+hits *after* training completes successfully (all 30,000 iterations, config
+saved) — only the export/checkpoint-reload step fails. PyTorch 2.6 changed
+`torch.load`'s default `weights_only` argument from `False` to `True`, and
+nerfstudio's checkpoint loader (`nerfstudio/utils/eval_utils.py`) hasn't been
+updated to pass it explicitly, so loading its own checkpoint (which contains
+a numpy scalar) gets blocked as a security precaution. Since PyTorch 2.11 is
+what `setup_env.sh` installs, this hits reliably.
+
+Fixed by patching that one `torch.load` call to pass `weights_only=False`
+(safe here — we're only ever loading our own freshly-trained checkpoint, not
+an untrusted file). `setup_env.sh` now does this automatically via `sed`
+after installing nerfstudio. If you hit this on an environment set up before
+that fix landed, patch it directly and re-run just the export (no need to
+redo training — the checkpoint is already saved):
+```bash
+sed -i 's/torch\.load(load_path, map_location="cpu")/torch.load(load_path, map_location="cpu", weights_only=False)/' \
+  "$CONDA_PREFIX/lib/python3.10/site-packages/nerfstudio/utils/eval_utils.py"
+ns-export gaussian-splat --load-config <path/to/config.yml> --output-dir <export-dir>
+```
+
 ## Runtime library issues (all now pinned in `environment.yml`)
 
 - **`ffmpeg` — `Unrecognized option 'vsync'`**: nerfstudio's `ns-process-data`
