@@ -110,6 +110,37 @@ frames/COLMAP if `data/<scene>/colmap/sparse/0/cameras.bin` already exists —
 useful when only the training step needs retrying. **Always `git pull` after
 any repo fix lands** before assuming a retry has it.
 
+## Optional: drive the home PC remotely (e.g. from a university PC)
+
+Uses Claude Code Remote Control — nothing to install on the remote/uni PC,
+and it works through restrictive firewalls since the home PC only makes
+outbound connections.
+
+On the home PC, **inside WSL** (that's where the `gsplat` env and scripts
+live; a Windows-side Claude Code install can't run them directly):
+```bash
+curl -fsSL https://claude.ai/install.sh | bash   # one-time
+tmux new -s claude
+cd ~/Claude_Test
+claude remote-control
+# Ctrl+b then d to detach; leave it running
+```
+Keep the PC plugged in, Sleep → Never, lid open. A Windows Update reboot kills
+it — restart the steps above afterward (`tmux attach -t claude` if the tmux
+session survived).
+
+From anywhere else: open claude.ai/code (or the Claude mobile app) — the home
+PC's session appears there.
+
+Limits:
+- `localhost:7007` (the nerfstudio viewer) is only reachable *on* the home
+  PC. To see it remotely, use a remote desktop tool (e.g. Chrome Remote
+  Desktop, browser-based).
+- New videos have to get onto the home PC — easiest is a synced folder
+  (OneDrive/Google Drive); e.g. `C:\Users\<you>\OneDrive\Videos` is
+  `/mnt/c/Users/<you>/OneDrive/Videos/` inside WSL. Heavy I/O straight off a
+  synced folder is slow, so copy the video into WSL (`~/`) before running.
+
 ## 3. View / use the result
 
 **For just looking at it: prefer the nerfstudio viewer (localhost:7007) over
