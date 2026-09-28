@@ -71,7 +71,29 @@ problems back to when something changed.
 7. **COLMAP 4 cannot open databases created by COLMAP 3.10** ("Migrating pose_priors table ...
    SQLite error"). If using `colmap4`, run the whole pipeline (features, matching, mapper) with it.
 
-8. **Memory/temperature observations:** COLMAP feature matching pushed the GPU to 86 °C (throttling
+8. **splatfacto-big nearly fills the 8 GB GPU** (2026-09-28, IMG_6556, 650 full-res frames).
+   GPU memory: 3.0 GB at step 1.1k, 5.3 GB at 5.7k, 7.2 GB at 8.2k (densification continues to 15k).
+   Step time went from about 40 ms to about 194 ms. The user chose to let it run. Risk on WSL: the NVIDIA
+   driver may spill into Windows system RAM (sysmem fallback) instead of failing with a clean OOM, which
+   slows training badly and never triggers the script's fallback to `splatfacto`.
+
+   Outcome: at step ~10.6k the step time hit 562 ms (likely spilling), so the run was stopped and
+   resumed from the step-10000 checkpoint (see Problems 10 and 11).
+
+10. **Resuming a checkpoint fails with `WeightsUnpickler error: Unsupported global: numpy.core.multiarray.scalar`**
+   (PyTorch 2.11 defaults `torch.load(weights_only=True)`). Fix: `export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1`
+   before `ns-train --load-dir ...` (safe for our own checkpoints). Also: the first resume script kept going
+   after the failure and started IMG_6557. Runner scripts must `exit` on a failed step.
+
+11. **Resuming mid-densification crashes: `CUDA error: device-side assert ... index out of bounds`**
+   at the first refinement after the resume (step ~10080-10100). The checkpoint does not match the
+   densification bookkeeping. Fix: resume with `--pipeline.model.stop-split-at` <= the checkpoint step (used
+   10000), so no more splitting or culling happens. Result: GPU 7.2 GB -> 6.1 GB, step time 562 ms -> 144 ms.
+   `resume_6556_then_6557.sh` resumes IMG_6556 from `outputs/IMG_6556/splatfacto/2026-09-28_143534/`.
+   `make_splat_hq.sh` now defaults to `STOP_SPLIT=11000` for fresh runs (IMG_6557).
+   (Nerfstudio names the output folder `splatfacto` even for `splatfacto-big`.)
+
+12. **Memory/temperature observations:** COLMAP feature matching pushed the GPU to 86 °C (throttling
    starts about 87 °C). splatfacto-big used about 3-4.7 GB GPU early in training, compared with about
    2.2 GB peak for splatfacto.
 

@@ -39,6 +39,7 @@ train() {  # $1 = method
     --max-num-iterations "$MAX_ITERS" \
     --pipeline.datamanager.cache-images cpu \
     --pipeline.model.camera-optimizer.mode SO3xR3 \
+    --pipeline.model.stop-split-at "${STOP_SPLIT:-11000}" \
     --viewer.quit-on-train-completion True \
     nerfstudio-data --data "$DATA" \
     --downscale-factor 1 \
