@@ -62,4 +62,5 @@ Steps 1-3 are skipped if `data/<scene>/transforms_nsprocess.json` exists.
 | `my_scene` | IMG_6449 (313 frames) | `outputs/my_scene/splatfacto/2026-09-16_204930` |
 | `my_scene_600f(_hq)` | IMG_6449 (659 frames) | `exports/my_scene_600f_hq/splat.ply` (30k, full res, COLMAP-aligned) |
 | `IMG_6556` | IMG_6556.MOV | Done 2026-09-28: splatfacto-big, 40k steps (resumed at 10k, stop-split-at 10000), 2.89M Gaussians, `exports/IMG_6556/splat.ply` (717 MB), config `outputs/IMG_6556/splatfacto/2026-09-28_151253/` |
+| `IMG_6556` relightable | GaussianShader on `data_gaussianshader/IMG_6556` (undistorted) | Started 2026-09-28 21:43 by `run_gs_6556.sh` (30k iters, `-r 2`, `--data_device cpu`, env `gaussian_shader`) -> `outputs_relightable/IMG_6556/`. No resumable checkpoints; saves at 7k/15k/30k. Watch with `watch_gs.sh PID LOG 30000`. |
 | `IMG_6557` | IMG_6557.MOV | **On hold: the user said not to start it yet.** Start with `./scripts/make_splat_hq.sh /mnt/c/Users/roach/Downloads/IMG_6557.MOV IMG_6557` (fresh run, STOP_SPLIT 11000) |
