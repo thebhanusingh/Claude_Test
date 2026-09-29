@@ -11,5 +11,6 @@ echo "=== [1/1] GaussianShader IMG_6556, 30000 iters ($(date)) ==="
 python train.py -s ~/Claude_Test/data_gaussianshader/IMG_6556 -m ~/Claude_Test/outputs_relightable/IMG_6556 \
   -w --brdf_dim 0 --sh_degree -1 --lambda_predicted_normal 2e-1 --brdf_env 512 \
   -r 2 --data_device cpu --iterations 30000 \
-  --test_iterations 7000 15000 30000 --save_iterations 7000 15000 30000 \
+  --densify_grad_threshold 0.0004 --densify_until_iter 7000 \
+  --test_iterations 7000 15000 30000 --save_iterations 5000 10000 15000 20000 25000 30000 \
   && echo "=== DONE GaussianShader IMG_6556 ($(date)) ===" || echo "=== GaussianShader FAILED ($(date)) ==="
