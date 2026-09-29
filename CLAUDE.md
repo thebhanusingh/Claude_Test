@@ -41,6 +41,7 @@ Steps 1-3 are skipped if `data/<scene>/transforms_nsprocess.json` exists.
    to a crawl instead of failing. Cap `stop-split-at` at about 10-11k.
 6. Resuming needs `export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` (PyTorch 2.11 torch.load default).
 7. **Resuming mid-densification crashes** (CUDA "index out of bounds"). Resume with `stop-split-at` <= the checkpoint step.
+7b. When resuming, `--max-num-iterations` counts **extra** steps from the checkpoint (10k + 30000 = 40k). Pass the remaining steps only.
 8. Runner scripts must `exit` on failure. One once carried on to the next video after a failed step.
 9. Don't `pkill -f <pattern>` when the pattern appears in your own command line: it kills your own shell. Use PIDs or `[x]yz` patterns.
 10. The laptop sleeps if the lid is closed or it's unplugged (keep-awake doesn't prevent that). GPU hits 86 C during COLMAP matching.
@@ -60,5 +61,5 @@ Steps 1-3 are skipped if `data/<scene>/transforms_nsprocess.json` exists.
 |---|---|---|
 | `my_scene` | IMG_6449 (313 frames) | `outputs/my_scene/splatfacto/2026-09-16_204930` |
 | `my_scene_600f(_hq)` | IMG_6449 (659 frames) | `exports/my_scene_600f_hq/splat.ply` (30k, full res, COLMAP-aligned) |
-| `IMG_6556` | IMG_6556.MOV | in progress (2026-09-28): resumed from step 10k, `resume_6556_then_6557.sh` |
-| `IMG_6557` | IMG_6557.MOV | queued after IMG_6556 (separate scene) |
+| `IMG_6556` | IMG_6556.MOV | Done 2026-09-28: splatfacto-big, 40k steps (resumed at 10k, stop-split-at 10000), 2.89M Gaussians, `exports/IMG_6556/splat.ply` (717 MB), config `outputs/IMG_6556/splatfacto/2026-09-28_151253/` |
+| `IMG_6557` | IMG_6557.MOV | **On hold: the user said not to start it yet.** Start with `./scripts/make_splat_hq.sh /mnt/c/Users/roach/Downloads/IMG_6557.MOV IMG_6557` (fresh run, STOP_SPLIT 11000) |

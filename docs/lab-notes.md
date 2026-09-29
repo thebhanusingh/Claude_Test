@@ -93,7 +93,15 @@ problems back to when something changed.
    `make_splat_hq.sh` now defaults to `STOP_SPLIT=11000` for fresh runs (IMG_6557).
    (Nerfstudio names the output folder `splatfacto` even for `splatfacto-big`.)
 
-12. **Memory/temperature observations:** COLMAP feature matching pushed the GPU to 86 °C (throttling
+12. **Resume adds `--max-num-iterations` on top of the checkpoint step** (2026-09-28). Resuming at step 10000
+   with `--max-num-iterations 30000` trained to 40000 (the progress display showed 131 %), about 1.5 h longer
+   than expected. When resuming, pass `max_iters - checkpoint_step` (for example 20000).
+   With a viewer tab connected, GPU memory went from 6.1 to 7.9 GB and steps slowed from about 140 ms to
+   400-450 ms. The last ~10k steps took until 18:55. **Keep the viewer closed during training on 8 GB.**
+   Result: `exports/IMG_6556/splat.ply`, 2.89M Gaussians, 717 MB, exported 18:58.
+   IMG_6557 put on hold at the user's request (runner stopped; `export_6556_only.sh` exported IMG_6556 only).
+
+13. **Memory/temperature observations:** COLMAP feature matching pushed the GPU to 86 °C (throttling
    starts about 87 °C). splatfacto-big used about 3-4.7 GB GPU early in training, compared with about
    2.2 GB peak for splatfacto.
 
