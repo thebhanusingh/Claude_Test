@@ -38,7 +38,8 @@ Steps 1-3 are skipped if `data/<scene>/transforms_nsprocess.json` exists.
 4. **Never use `--eval-mode all`**: it caches the frames twice and nearly ran out of RAM. About 650 full-res frames is
    about 10-11.6 GB RAM, near the limit.
 5. **splatfacto-big fills the 8 GB of VRAM before step 15k** (7.2 GB at 8.2k). Then WSL spills into system RAM and slows
-   to a crawl instead of failing. Cap `stop-split-at` at about 10-11k.
+   to a crawl, or crashes with "CUDA driver error: device not ready" (IMG_6557 at step 7390, even with stop-split-at 10000).
+   On this laptop use `stop-split-at` <= 7000 for big, or plain splatfacto. Monitor re-arms can lag, so check the log directly after each expiry.
 6. Resuming needs `export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1` (PyTorch 2.11 torch.load default).
 7. **Resuming mid-densification crashes** (CUDA "index out of bounds"). Resume with `stop-split-at` <= the checkpoint step.
 7b. When resuming, `--max-num-iterations` counts **extra** steps from the checkpoint (10k + 30000 = 40k). Pass the remaining steps only.
@@ -63,4 +64,4 @@ Steps 1-3 are skipped if `data/<scene>/transforms_nsprocess.json` exists.
 | `my_scene_600f(_hq)` | IMG_6449 (659 frames) | `exports/my_scene_600f_hq/splat.ply` (30k, full res, COLMAP-aligned) |
 | `IMG_6556` | IMG_6556.MOV | Done 2026-09-28: splatfacto-big, 40k steps (resumed at 10k, stop-split-at 10000), 2.89M Gaussians, `exports/IMG_6556/splat.ply` (717 MB), config `outputs/IMG_6556/splatfacto/2026-09-28_151253/` |
 | `IMG_6556` relightable | GaussianShader on `data_gaussianshader/IMG_6556` (undistorted) | Done 2026-09-29 01:18 (`run_gs_6556.sh`: 30k iters, `-r 2`, `--data_device cpu`, `--densify_grad_threshold 0.0004 --densify_until_iter 7000`, env `gaussian_shader`). Train PSNR 25.06. `outputs_relightable/IMG_6556/point_cloud/iteration_{5..30}000/point_cloud.ply` (about 106 MB). GPU about 3.1 GB after densification. Watch runs with `watch_gs.sh PID LOG 30000`. |
-| `IMG_6557` | IMG_6557.MOV | **On hold: the user said not to start it yet.** Start with `./scripts/make_splat_hq.sh /mnt/c/Users/roach/Downloads/IMG_6557.MOV IMG_6557` (fresh run, STOP_SPLIT 11000) |
+| `IMG_6557` | IMG_6557.MOV | Done 2026-09-29 10:58. splatfacto-big crashed at step 7390 ("CUDA driver error: device not ready"), and the automatic fallback to splatfacto finished 30k: `exports/IMG_6557/splat.ply` (1.45M Gaussians, 359 MB), config `outputs/IMG_6557/splatfacto/2026-09-29_100714/`. |

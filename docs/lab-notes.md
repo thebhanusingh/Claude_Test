@@ -121,8 +121,36 @@ problems back to when something changed.
      Train PSNR 24.58 @15k, 25.06 @30k. Snapshots every 5k in `outputs_relightable/IMG_6556/point_cloud/` (about 106 MB each).
      The heartbeat showed no overnight sleep gaps. The watcher's "finished" notification only reached the chat at 07:27
      (delivery delay on the session side, not a laptop problem).
+   - Relighting: GaussianShader's `render.py` has no "new envmap" flag. The learned lighting is
+     `brdf_mlp/iteration_N/brdf_mlp.hdr` (lat-long HDR, loaded with `load_env`), so to relight, make a model dir that
+     symlinks `point_cloud`, `cameras.json`, `input.ply`, `cfg_args` and holds a different `.hdr` there.
+     `run_gs_render_6556.sh` renders learned + Poly Haven CC0 `studio_small_08` and `kloppenheim_06` (1k HDRs in
+     `envmaps/`) and writes MP4s to `exports/IMG_6556_relightable/`. Don't use `set -u` in scripts that `source`
+     conda activate (the gcc activation script fails with `SYS_SYSROOT: unbound variable`).
+   - Result: the learned-lighting render matches the input well (frame 300 mean 122.8 vs GT 123.8). Relit with the raw
+     studio HDR it came out washed out (mean 187) with purple/blue streaks in shadowed grass (specular on noisy grass
+     normals). Cause: raw Poly Haven HDRs are much brighter than the learned light (mean radiance 0.129 learned vs
+     0.698 studio = 5.4x, 0.494 sunset = 3.8x). Made `envmaps/*_1k_matched.hdr` scaled to 0.129 and rendered them with
+     `run_gs_render_matched_6556.sh`. Baked cast shadows (sun on grass) stay in any relight; GaussianShader has no shadow model.
+   - **Key finding: GaussianShader only relights the specular (reflection) term.** Frame 570: `diffuse_color` is 0.441 in
+     both the learned and studio renders (unchanged); only `specular_color` changed (0.179 -> 0.439). Its shading is
+     diffuse albedo (not lit by the envmap) + specular tint x reflected env light. So the sun, shade and shadows are
+     baked into the diffuse part. A new envmap only changes reflections. On grass the learned normals are noisy, so the
+     reflected light shows up as "cloudy" haze and purple streaks everywhere (the user reported "lots of cloudy artifacts
+     and too bright"). GaussianShader targets shiny objects; it is not a real relighting method for an outdoor diffuse scene.
+   - GaussianShader `render.py` holds about 12.5 GB RAM (all 650 frames loaded), leaving about 2.6 GB. Don't run it next to COLMAP
+     or nerfstudio training. `run_6557.sh` waits for it to finish.
 
-14. **Memory/temperature observations:** COLMAP feature matching pushed the GPU to 86 °C (throttling
+14. **IMG_6557: splatfacto-big crashed with `RuntimeError: CUDA driver error: device not ready`** (2026-09-29 10:07,
+   step 7390, about 196 ms/step, which suggests VRAM was already spilling to system RAM). This happened despite
+   `stop-split-at 10000` and `expandable_segments`. The script fell back to `splatfacto`, which completed 30k steps (10:07-10:58,
+   about 115 ms/step, GPU about 3.4 GB). Result `exports/IMG_6557/splat.ply`, 1.45M Gaussians, 359 MB. The partial big run is
+   in `outputs/IMG_6557/splatfacto/2026-09-29_095338` (ckpt step 6000).
+   **Monitoring gap:** no watcher ran from about 09:53 to 10:50 (the expiry notice arrived late), so the crash was only
+   reported 45 min later. Conclusion: on 8 GB, splatfacto-big at full res with 650 frames is unreliable. Use
+   `stop-split-at` <= 7000 or plain splatfacto.
+
+15. **Memory/temperature observations:** COLMAP feature matching pushed the GPU to 86 °C (throttling
    starts about 87 °C). splatfacto-big used about 3-4.7 GB GPU early in training, compared with about
    2.2 GB peak for splatfacto.
 

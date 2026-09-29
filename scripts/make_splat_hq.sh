@@ -33,13 +33,17 @@ else
   python scripts/fix_colmap_model.py "$DATA" || { echo "POSE FIX FAILED"; exit 1; }
 fi
 
+# expandable_segments reduces CUDA allocator fragmentation: IMG_6556 used 7.2 GB at step 8.2k
+# fresh, but the same Gaussians took only 6.1 GB after a restart.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 train() {  # $1 = method
   TORCHDYNAMO_DISABLE=1 ns-train "$1" \
     --output-dir outputs --experiment-name "$SCENE" \
     --max-num-iterations "$MAX_ITERS" \
     --pipeline.datamanager.cache-images cpu \
     --pipeline.model.camera-optimizer.mode SO3xR3 \
-    --pipeline.model.stop-split-at "${STOP_SPLIT:-11000}" \
+    --pipeline.model.stop-split-at "${STOP_SPLIT:-10000}" \
     --viewer.quit-on-train-completion True \
     nerfstudio-data --data "$DATA" \
     --downscale-factor 1 \
