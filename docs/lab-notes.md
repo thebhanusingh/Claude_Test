@@ -151,7 +151,15 @@ problems back to when something changed.
    reported 45 min later. Conclusion: on 8 GB, splatfacto-big at full res with 650 frames is unreliable. Use
    `stop-split-at` <= 7000 or plain splatfacto.
 
-15. **Memory/temperature observations:** COLMAP feature matching pushed the GPU to 86 °C (throttling
+15. **Before/after screenshots: `ns-render dataset` pairs a *distorted* `gt-rgb` with an *undistorted* render**
+   (2026-09-29). The offset was about 0 px in the centre and about ±12 px in opposite corners, which gave a misleading PSNR of about 15 dB.
+   Fix: `cv2.undistort(gt, K, D)` with the same K (OPENCV k1,k2,p1,p2 from `transforms.json`), then crop 30 px. This gives
+   held-out PSNR medians of **IMG_6556 21.2 dB** (19.7-23.4) and **IMG_6557 22.5 dB** (20.0-24.5). Grass-heavy scenes
+   score low on PSNR even when they look right. Also note: with `camera-optimizer SO3xR3`, held-out views use unrefined
+   poses. Images are in `exports/before_after/` (median, best and worst per scene, plus relighting panels). Also: run
+   `ns-render` with the gsplat env *activated* (otherwise "Ninja is required").
+
+16. **Memory/temperature observations:** COLMAP feature matching pushed the GPU to 86 °C (throttling
    starts about 87 °C). splatfacto-big used about 3-4.7 GB GPU early in training, compared with about
    2.2 GB peak for splatfacto.
 
