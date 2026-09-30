@@ -39,12 +39,17 @@ DATA_DIR="$REPO_ROOT/data/$SCENE_NAME"
 OUTPUT_DIR="$REPO_ROOT/outputs"
 EXPORT_DIR="$REPO_ROOT/exports/$SCENE_NAME"
 
-echo "=== [1/3] Extracting frames + estimating camera poses with COLMAP ==="
-mkdir -p "$DATA_DIR"
-ns-process-data video \
-  --data "$VIDEO_PATH" \
-  --output-dir "$DATA_DIR" \
-  --num-frames-target "$NUM_FRAMES"
+if [[ -f "$DATA_DIR/colmap/sparse/0/cameras.bin" ]]; then
+  echo "=== [1/3] COLMAP data already exists at $DATA_DIR, skipping extraction ==="
+  echo "    (delete that directory first if you want to redo it, e.g. with a different NUM_FRAMES)"
+else
+  echo "=== [1/3] Extracting frames + estimating camera poses with COLMAP ==="
+  mkdir -p "$DATA_DIR"
+  ns-process-data video \
+    --data "$VIDEO_PATH" \
+    --output-dir "$DATA_DIR" \
+    --num-frames-target "$NUM_FRAMES"
+fi
 
 echo "=== [2/3] Training Gaussian Splat (splatfacto) for $MAX_ITERS iterations ==="
 # TORCHDYNAMO_DISABLE avoids a torch.compile/inductor crash on some setups where
