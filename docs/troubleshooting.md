@@ -24,9 +24,11 @@ current one.
 **`setup_env.sh` needs a real bash, not PowerShell.** Use WSL2. If `wsl`
 opens and immediately closes, or `wsl --list --verbose` says "no installed
 distributions," the Ubuntu distro didn't actually finish installing — run
-`wsl --install -d Ubuntu` from an **Administrator** PowerShell and watch it
-through to either the username prompt or a reboot request, don't close the
-window early.
+`wsl --install -d Ubuntu` and watch it through to either the username prompt
+or a reboot request, don't close the window early. It needs an
+**Administrator** PowerShell only if the WSL feature itself isn't enabled yet.
+On machines where IT already enabled WSL (e.g. the school workstation) it
+installed without admin rights.
 
 **Multi-line paste into a WSL terminal can get garbled** (stray `^[[200~` /
 `^[[201~` escape codes leaking through, commands merging into each other).
@@ -86,6 +88,40 @@ sed -i 's/torch\.load(load_path, map_location="cpu")/torch.load(load_path, map_l
 ns-export gaussian-splat --load-config <path/to/config.yml> --output-dir <export-dir>
 ```
 
+## COLMAP problems
+
+- **COLMAP 3.12+ — `unrecognised option '--SiftExtraction.use_gpu'`**:
+  `environment.yml` leaves `colmap` unpinned, conda-forge now ships 3.13, and
+  3.13 renamed the option to `--FeatureExtraction.use_gpu` (and
+  `--SiftMatching.use_gpu` to `--FeatureMatching.use_gpu`). nerfstudio 1.1.5
+  still passes the old names. `setup_env.sh` now detects the COLMAP version and
+  patches `nerfstudio/process_data/colmap_utils.py` automatically.
+- **COLMAP splits the scene, and nerfstudio trains on only a few frames with no
+  error.** `ns-process-data` reads only `colmap/sparse/0`, which can hold only
+  2 of 659 frames when COLMAP produces several sub-models. It prints a
+  "COLMAP only found poses for 0.30% of the images" warning and trains anyway.
+  `make_splat.sh` now refuses to train if fewer than 80% of frames are posed.
+  Fix with `python scripts/fix_colmap_model.py data/<scene>` (uses the largest
+  sub-model).
+
+## Memory limits (8 GB GPU / WSL RAM)
+
+- **Don't use `--eval-mode all`** with `cache-images cpu`: it caches every
+  frame twice and nearly exhausted WSL's 15.5 GB RAM with 650 1080p frames.
+- **splatfacto-big at 1080p doesn't fit in 8 GB**: VRAM hit 7.2 GB by step
+  about 8k. On WSL it then spills into system RAM (a crawl, or `CUDA driver
+  error: device not ready`) instead of failing cleanly. Use plain splatfacto,
+  or cap densification (`--pipeline.model.stop-split-at 7000`). A 96 GB
+  Blackwell ran it uncapped at 13.6 GB peak.
+- **Keep the viewer tab closed during training** on small GPUs: an open
+  viewer added about 1.8 GB VRAM and slowed steps about 3x.
+- **Resuming** (`--load-dir`): needs `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1`,
+  crashes ("index out of bounds") if resumed while still densifying (set
+  `stop-split-at` <= the checkpoint step), and `--max-num-iterations` counts
+  steps on top of the checkpoint.
+
+More detail and numbers: `docs/lab-notes.md`.
+
 ## Runtime library issues (all now pinned in `environment.yml`)
 
 - **`ffmpeg` — `Unrecognized option 'vsync'`**: nerfstudio's `ns-process-data`
@@ -129,6 +165,27 @@ or isn't reliably where the environment expects it.
 `setup_env.sh` also proactively chmods any `nvcc` it finds under the conda
 env after install, in case the pip-bundled one shows up but isn't
 executable — but the apt-installed system one is what actually worked here.
+
+**Newer Ubuntu (26.04+, what `wsl --install` gives you now) ships gcc 15**, which
+CUDA 12.4's nvcc (apt's `nvidia-cuda-toolkit`) refuses to use, so the apt fix
+above fails there. Use a conda compiler instead: either a newer CUDA nvcc
+from conda-forge (the school machine used CUDA 12.8 nvcc with g++ 14) or
+conda's `gxx_linux-64=12`, and point builds at it with
+`CC`/`CXX`/`CUDAHOSTCXX` (e.g. `x86_64-conda-linux-gnu-g++`).
+
+**`cuda_runtime.h: No such file or directory` when building gsplat or other
+CUDA extensions with conda's CUDA.** conda-forge puts the CUDA headers and
+libraries under `$CONDA_PREFIX/targets/x86_64-linux/`, not `$CONDA_PREFIX/include`.
+Point the build at them (WSL's GPU driver library lives in `/usr/lib/wsl/lib`):
+```bash
+T=$CONDA_PREFIX/targets/x86_64-linux
+export CUDA_HOME=$CONDA_PREFIX CPATH=$T/include LIBRARY_PATH=$T/lib:$T/lib/stubs:/usr/lib/wsl/lib:$CONDA_PREFIX/lib
+```
+To make that permanent for the env: `conda env config vars set CPATH=... LIBRARY_PATH=...`.
+
+**Don't use `set -u` around `conda activate`.** conda's gcc and CUDA activation
+scripts reference unset variables (`SYS_SYSROOT`, `NVCC_PREPEND_FLAGS`) and the
+script dies at startup. Use `set -eo pipefail`, or turn `-u` on after activating.
 
 **First-time gsplat CUDA compile is silent for several minutes** (`gsplat:
 Setting up CUDA with MAX_JOBS=10 (This may take a few minutes the first

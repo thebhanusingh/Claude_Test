@@ -67,6 +67,21 @@ if [[ -f "$EVAL_UTILS" ]]; then
   sed -i 's/torch\.load(load_path, map_location="cpu")/torch.load(load_path, map_location="cpu", weights_only=False)/' "$EVAL_UTILS"
 fi
 
+echo "==> Patching nerfstudio for COLMAP 3.12+ option names (if needed)"
+# environment.yml leaves colmap unpinned (Blackwell needs recent CUDA builds). COLMAP 3.12+
+# renamed --SiftExtraction.use_gpu / --SiftMatching.use_gpu to --FeatureExtraction.use_gpu /
+# --FeatureMatching.use_gpu, but nerfstudio 1.1.5 still passes the old names, so
+# ns-process-data crashes on a fresh install. Only patch when the installed COLMAP needs it.
+COLMAP_UTILS="$CONDA_PREFIX/lib/python3.10/site-packages/nerfstudio/process_data/colmap_utils.py"
+COLMAP_VER="$(colmap -h 2>/dev/null | grep -oE 'COLMAP [0-9]+\.[0-9]+' | head -1 | cut -d' ' -f2 || true)"
+if [[ -f "$COLMAP_UTILS" && -n "$COLMAP_VER" ]] && \
+   python -c "import sys; M,m=map(int,'$COLMAP_VER'.split('.')); sys.exit(0 if (M,m)>=(3,12) else 1)"; then
+  sed -i 's/--SiftExtraction\.use_gpu/--FeatureExtraction.use_gpu/; s/--SiftMatching\.use_gpu/--FeatureMatching.use_gpu/' "$COLMAP_UTILS"
+  echo "    COLMAP $COLMAP_VER detected: patched option names"
+else
+  echo "    COLMAP ${COLMAP_VER:-unknown}: no patch needed"
+fi
+
 echo "==> Ensuring any pip-bundled nvcc binaries are executable"
 # gsplat (nerfstudio's splatfacto rasterizer) and torch.compile both shell out to
 # 'nvcc' at runtime. The nvcc bundled by the 'cuda-toolkit'/'nvidia-cuda-nvcc-cu12'

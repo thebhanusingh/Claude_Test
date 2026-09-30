@@ -25,8 +25,10 @@ problems back to when something changed.
 | `scripts/select_sharp_frames.py` | Scores every video frame by Laplacian variance and keeps the sharpest frame per window (default 650). Replaces ffmpeg's evenly spaced extraction. |
 | `scripts/fix_colmap_model.py` | Picks the COLMAP sub-model with the most images, bundle-adjusts it (incl. principal point), writes `transforms.json` + `sparse_pc.ply` in original COLMAP world coordinates. Original nerfstudio outputs kept as `*_nsprocess.*`. |
 | `scripts/make_splat_hq.sh` | Full HQ pipeline: sharp frames -> `ns-process-data images` -> `fix_colmap_model.py` -> `splatfacto-big` (falls back to `splatfacto` on failure) -> export. Skips steps 1-3 if the scene already has poses. |
-| `run_600f.sh`, `run_600f_hq.sh`, `run_two_videos.sh` (repo root) | One-off runners for specific scenes. |
-| `watch_600f.sh` (repo root) | Watcher: status line every 15 s to `<log>_status.log`; stdout summary every 5 min, on stage change, errors, finish, or process disappearing. Args: `PID LOG [DONE_PATTERN]`. |
+| `scripts/runs/*.sh` | One-off runners for specific scenes (see `scripts/runs/README.md`). **Moved out of the repo root on 2026-09-30.** The script names used in the entries below now live in that folder. |
+| `scripts/watch_nerfstudio.sh` (was `watch_600f.sh`) | Watcher: status line every 15 s to `<log>_status.log`; stdout summary every 5 min, on stage change, errors, finish, or process disappearing. Args: `PID LOG [DONE_PATTERN]`. |
+| `scripts/watch_gaussianshader.sh` (was `watch_gs.sh`) | Same idea for GaussianShader's tqdm progress bar. Args: `PID LOG TOTAL_ITERS`. |
+| 2026-09-30 repo corrections | `setup_env.sh` patches nerfstudio for COLMAP >= 3.12 option names. `make_splat.sh` gained `METHOD` / `MATCHING` / `DOWNSCALE` overrides, a split-COLMAP check (refuses to train if fewer than 80% of frames are posed) and nerfstudio-viewer-first wording. `*.log` and local artifacts are gitignored. Docs updated for gcc 15 / conda CUDA headers / WSL admin. |
 
 ## Training runs
 

@@ -1,10 +1,13 @@
 #!/bin/bash
-# Watches run_600f.sh (PID given as $1). Writes a detailed status line every 15s to
-# run_600f_status.log (useful after a silent crash), and prints a summary to stdout
-# every 5 min, on every stage change, on errors, and when the pipeline exits.
-PID=$1
+# Watches a nerfstudio pipeline run. Args: PID LOG [DONE_PATTERN]
+#   PID           process id of the runner script (watch ends if it disappears)
+#   LOG           the runner's log file (expects "=== [n/m] ..." stage lines)
+#   DONE_PATTERN  line that marks success (default "=== DONE")
+# Writes a detailed status line every 15s to <LOG>_status.log (useful after a silent crash), and
+# prints a summary to stdout every 5 min, on every stage change, on errors, and when the run exits.
+PID=${1:?Usage: watch_nerfstudio.sh PID LOG [DONE_PATTERN]}
 DONE_PAT=${3:-"=== DONE"}
-LOG=${2:-~/Claude_Test/run_600f.log}
+LOG=${2:?Usage: watch_nerfstudio.sh PID LOG [DONE_PATTERN]}
 STATUS=${LOG%.log}_status.log
 last_stage=""; last_err=0; n=0
 while true; do

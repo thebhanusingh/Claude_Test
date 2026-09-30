@@ -13,11 +13,11 @@ Full details, dates and numbers are in `docs/lab-notes.md`. Update both when som
 
 ## How the user wants to work
 - Send progress updates about every 5 min on long runs and alert right away on errors or crashes.
-  Use `watch_600f.sh PID LOG [DONE_PATTERN]` through the Monitor tool, filtering out harmless viewer
+  Use `scripts/watch_nerfstudio.sh PID LOG [DONE_PATTERN]` (or `scripts/watch_gaussianshader.sh PID LOG ITERS`) through the Monitor tool, filtering out harmless viewer
   AssertionErrors, and re-arm it every 30 min.
 - Log every change, run and problem in `docs/lab-notes.md`.
 - Ask before big or unexpected actions: they often interrupt tool calls they didn't expect.
-- Screenshots / SendUserFile do not work in this session. Show terminal contents as text instead.
+- Screenshots / SendUserFile do not work in a Remote Control session without a project thread. Show terminal contents as text, or open the folder in Explorer (`explorer.exe "$(wslpath -w DIR)"`) when the user is at the laptop.
 
 ## Standard pipeline (one video -> one scene)
 `./scripts/make_splat_hq.sh <video> <scene> [num_frames=650] [iters=30000]`
@@ -25,7 +25,7 @@ Full details, dates and numbers are in `docs/lab-notes.md`. Update both when som
 2. `ns-process-data images` (COLMAP).
 3. `scripts/fix_colmap_model.py`: use the **largest** COLMAP sub-model, refine intrinsics, keep COLMAP coordinates.
 4. `ns-train splatfacto-big` at full res, `cache-images cpu`, pose optimisation `SO3xR3`,
-   `stop-split-at ${STOP_SPLIT:-11000}`, `--orientation-method none --center-method none --auto-scale-poses False`.
+   `stop-split-at ${STOP_SPLIT:-10000}` (on 16 GB+ GPUs set STOP_SPLIT=15000 or higher), `--orientation-method none --center-method none --auto-scale-poses False`.
    Falls back to `splatfacto` if it fails.
 5. `ns-export gaussian-splat` -> `exports/<scene>/splat.ply`.
 Steps 1-3 are skipped if `data/<scene>/transforms_nsprocess.json` exists.
@@ -49,7 +49,7 @@ Steps 1-3 are skipped if `data/<scene>/transforms_nsprocess.json` exists.
 11. COLMAP 4 can't open COLMAP 3.10 databases. If you use `colmap4`, run the whole pipeline with it.
 12. Remote Control login can expire (`OAuth ... revoked`). Only fixable by running `/login` at the laptop.
 13. Checkpoints are saved every 2000 steps and only the latest is kept. Nerfstudio names the folder `splatfacto` even for splatfacto-big.
-14. `git push` fails from the laptop (no GitHub credentials). Commits stay local. Git identity: `-c user.name=Claude -c user.email=noreply@anthropic.com`.
+14. The laptop is logged into GitHub via `~/.local/bin/gh` (account thebhanusingh, `gh auth setup-git`), so `git push` works. The remote branch can move independently (cloud and school sessions push too): **always `git fetch` and merge before editing**. Git identity: `-c user.name=Claude -c user.email=noreply@anthropic.com`.
 
 ## Background services (may or may not be running)
 - `~/.local/bin/keepalive.sh` writes to `~/keepalive.log` every 5 min. Hidden PowerShell keep-awake.
@@ -63,5 +63,6 @@ Steps 1-3 are skipped if `data/<scene>/transforms_nsprocess.json` exists.
 | `my_scene` | IMG_6449 (313 frames) | `outputs/my_scene/splatfacto/2026-09-16_204930` |
 | `my_scene_600f(_hq)` | IMG_6449 (659 frames) | `exports/my_scene_600f_hq/splat.ply` (30k, full res, COLMAP-aligned) |
 | `IMG_6556` | IMG_6556.MOV | Done 2026-09-28: splatfacto-big, 40k steps (resumed at 10k, stop-split-at 10000), 2.89M Gaussians, `exports/IMG_6556/splat.ply` (717 MB), config `outputs/IMG_6556/splatfacto/2026-09-28_151253/` |
-| `IMG_6556` relightable | GaussianShader on `data_gaussianshader/IMG_6556` (undistorted) | Done 2026-09-29 01:18 (`run_gs_6556.sh`: 30k iters, `-r 2`, `--data_device cpu`, `--densify_grad_threshold 0.0004 --densify_until_iter 7000`, env `gaussian_shader`). Train PSNR 25.06. `outputs_relightable/IMG_6556/point_cloud/iteration_{5..30}000/point_cloud.ply` (about 106 MB). GPU about 3.1 GB after densification. Watch runs with `watch_gs.sh PID LOG 30000`. |
+| `IMG_6556` relightable | GaussianShader on `data_gaussianshader/IMG_6556` (undistorted) | Done 2026-09-29 01:18 (`scripts/runs/run_gs_6556.sh`: 30k iters, `-r 2`, `--data_device cpu`, `--densify_grad_threshold 0.0004 --densify_until_iter 7000`, env `gaussian_shader`). Train PSNR 25.06. `outputs_relightable/IMG_6556/point_cloud/iteration_{5..30}000/point_cloud.ply` (about 106 MB). GPU about 3.1 GB after densification. Watch runs with `scripts/watch_gaussianshader.sh PID LOG 30000`. |
+| `IMG_6557` (school) | IMG_6557.mov on the RTX PRO 6000 Blackwell 96 GB | 2026-09-29: splatfacto-big 60k, uncapped, 672 frames, exhaustive matching, 4.15M Gaussians, 982 MB, 13.6 GB peak VRAM, 1 h 46 min. Copy at `/mnt/c/Users/roach/Downloads/splat.ply`. Comparison vs the laptop in `exports/school_vs_laptop/` (offset-corrected held-out PSNR 25.19 vs 24.75, visibly crisper). |
 | `IMG_6557` | IMG_6557.MOV | Done 2026-09-29 10:58. splatfacto-big crashed at step 7390 ("CUDA driver error: device not ready"), and the automatic fallback to splatfacto finished 30k: `exports/IMG_6557/splat.ply` (1.45M Gaussians, 359 MB), config `outputs/IMG_6557/splatfacto/2026-09-29_100714/`. |

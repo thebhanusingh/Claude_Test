@@ -30,13 +30,33 @@ MAX_JOBS=2 ./scripts/make_splat.sh /path/to/video.mp4 my_scene   # generates exp
 ```
 See `docs/quickstart.md` for what each step does, WSL2/Windows setup, and why `MAX_JOBS=2`.
 
+The repo lives on branch **`claude/clever-hawking-j0d7up`** (`main` only has an older README):
+`git clone https://github.com/thebhanusingh/Claude_Test && cd Claude_Test && git checkout claude/clever-hawking-j0d7up`.
+
+**Quality settings.** `make_splat.sh` defaults are tuned for an 8 GB laptop GPU. Override them with env vars:
+`METHOD=splatfacto-big` (needs about 16 GB+ VRAM at 1080p), `MATCHING=exhaustive|sequential|vocab_tree`, and
+`DOWNSCALE=1`. Without `DOWNSCALE`, nerfstudio **silently halves any image wider than 1600 px**, so 1080p video trains
+at 960x540. For the sharpest results use **`scripts/make_splat_hq.sh`**: it picks the sharpest frames, handles split
+COLMAP reconstructions, trains splatfacto-big at full resolution with pose refinement, and keeps COLMAP's coordinates.
+Use `STOP_SPLIT=15000` or higher on 16 GB+ GPUs.
+
 ### Repo layout
 
 ```
-environment.yml        conda environment spec (torch/cuda, ffmpeg, colmap)
-scripts/setup_env.sh    one-time environment setup
-scripts/make_splat.sh   video -> trained, exported Gaussian Splat
-data/, outputs/, exports/   generated at runtime, gitignored
+CLAUDE.md                       quick reference for Claude Code sessions (auto-loaded)
+environment.yml                 conda environment spec (ffmpeg, colmap, libusb; torch installed by setup_env.sh)
+scripts/setup_env.sh            one-time environment setup (+ nerfstudio patches for PyTorch 2.6+ and COLMAP 3.12+)
+scripts/make_splat.sh           video -> trained, exported Gaussian Splat (8 GB defaults, env overrides)
+scripts/make_splat_hq.sh        high-quality pipeline (sharpest frames, largest COLMAP model, full res)
+scripts/select_sharp_frames.py  sharpest frame per window of a video
+scripts/fix_colmap_model.py     rebuild transforms.json from the largest COLMAP sub-model, in COLMAP coordinates
+scripts/watch_*.sh              progress/crash watchers for long runs
+scripts/runs/                   exact one-off run scripts behind each result in docs/lab-notes.md
+docs/quickstart.md              step-by-step runbook
+docs/troubleshooting.md         setup problems and fixes
+docs/lab-notes.md               full log of runs, numbers and problems (Sept 2026)
+docs/session-report.md          narrative summary of the Sept 2026 sessions
+data/, outputs/, exports/       generated at runtime, gitignored
 ```
 
 ## Relightable (BRDF) Gaussian Splat
@@ -53,7 +73,7 @@ being baked under the original video's lighting. Two vendored options, set up wi
 |---|---|---|
 | Paper | "3D Gaussian Splatting with Shading Functions for Reflective Surfaces" | "Relightable 3D Gaussian: Real-time Point Cloud Relighting with BRDF Decomposition and Ray Tracing" — closest name/paper match to "BRDF relightable Gaussian Splat" |
 | Input data | Plain COLMAP output (`images/` + `sparse/0/*.bin`) — same convention as the base 3DGS repo | Custom "neilfpp-like" dataset: images + depth + normal + object-mask maps + `sfm_scene.json`. The authors' own README says a video/custom-capture prep script was not yet released as of last check |
-| Fits this repo's pipeline | **Yes** — `scripts/train_relightable_splat.sh` wires it directly to `scripts/make_splat.sh`'s COLMAP output | Not directly — vendored for reference only; you'd need to build the neilfpp-style preprocessing yourself |
+| Fits this repo's pipeline | **Partly** — `scripts/train_relightable_splat.sh` wires it to `scripts/make_splat.sh`'s COLMAP output, but the images must be undistorted first (see below) | Not directly — vendored for reference only; you'd need to build the neilfpp-style preprocessing yourself |
 | Reference GPU | Not stated | Single RTX 3090, **24GB VRAM** |
 | Relighting | Render under a new environment map (`render.py ... --brdf_mode envmap`) | Full BRDF decomposition + ray-traced relighting/shadows, more physically complete but heavier |
 
@@ -74,6 +94,16 @@ This symlinks `data/my_scene/{images,colmap/sparse/0}` into the layout GaussianS
 expects, then runs its `train.py`. Output lands in `outputs_relightable/my_scene/`; relight it with the
 `render.py --brdf_mode envmap` command it prints at the end.
 
-**VRAM note:** an 8GB laptop GPU (e.g. RTX 4070 Laptop) is untested territory for this method — no VRAM
-figure is published. If it OOMs, reduce `NUM_FRAMES`/resolution in the earlier COLMAP step, or try
-`--resolution` downscaling flags in GaussianShader's `train.py --help`.
+**What actually happened when we ran it (Sept 2026, see `docs/lab-notes.md` problem 13):**
+- GaussianShader's own `environment.yml` is a 2022 snapshot (Python 3.7, torch 1.10) and **can't be created**.
+  The working recipe builds a modern env (Python 3.10, torch 2.4+cu124, conda `cuda-toolkit` and gcc 12, `libusb`) and
+  sets `CPATH`/`LIBRARY_PATH` to the conda CUDA folders. See `scripts/runs/run_gs_6556.sh`. Blackwell GPUs need a
+  CUDA 12.8+ torch instead.
+- It only accepts **undistorted PINHOLE** cameras, so run `colmap image_undistorter` first. `train_relightable_splat.sh`
+  doesn't do this yet.
+- On the 8 GB RTX 4070 Laptop it worked at half resolution (`-r 2 --data_device cpu`) with reduced densification
+  (`--densify_grad_threshold 0.0004 --densify_until_iter 7000`): about 3.1 GB VRAM, 3 h 12 min for 30k steps. It has
+  **no resumable checkpoints**.
+- **It relights only reflections.** Its base colour isn't lit by the environment map, so sun, shade and cast shadows
+  stay baked in. On an outdoor grass scene a new HDR produced haze and purple streaks. It suits shiny objects, not
+  outdoor delighting. See `docs/session-report.md` for alternatives (DiffusionRenderer, intrinsic 3DGS, GaRe).

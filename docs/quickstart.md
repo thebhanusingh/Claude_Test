@@ -39,8 +39,13 @@ git checkout claude/clever-hawking-j0d7up
 ```
 
 **On Windows**, this needs WSL2 (the `.sh` scripts need real bash):
-- `wsl --install -d Ubuntu` from an **Administrator** PowerShell, let it run
-  to completion, set a Linux username/password when prompted.
+- `wsl --install -d Ubuntu`, let it run to completion, set a Linux
+  username/password when prompted. Use an **Administrator** PowerShell if the
+  WSL feature isn't enabled yet; on machines where it already is (common on
+  managed lab PCs) it installs without admin.
+- Current installs give **Ubuntu 26.04 with gcc 15**, which older CUDA
+  compilers reject. See the gcc 15 and `cuda_runtime.h` entries in
+  `docs/troubleshooting.md` before building anything with CUDA.
 - Clone the repo *inside* WSL's own filesystem (`~/`), not via `/mnt/c/...`
   into a Windows-side folder (avoids OneDrive sync interference and is much
   faster for COLMAP's many small files).
