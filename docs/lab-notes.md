@@ -279,9 +279,20 @@ from source, suggested values): project file `gs-ir/gs-ir-settings.md`.
    signal; a watcher should trigger the fallback when s/it rises past a threshold or VRAM passes ~7 GB.
 6. **Progress watcher sent nothing during attempt 2** (2026-10-07). Replaced with `~/gsir_watch.sh`.
 
+7. **GS-IR baking at `occlu_res 256` filled the 8 GB GPU and slowed down** (2026-10-07, 16:54-17:07).
+   GPU memory climbed from 2.9 GB (16:57) to 7.9 GB (17:06); the bake rate fell from ~41 to ~22-26 cells/s
+   (4-5 h projected) at 29,619/420,159 cells (7%). No OOM error, same crawl pattern as item 5.
+   Cause: the bake loop selects a different-sized set of Gaussians per cell, and PyTorch's CUDA caching
+   allocator keeps growing to fit them (fragmentation, not real need).
+   Fix: stopped at 17:07 (log `~/gsir_train_stage1_and_bake256.log`); re-baked at `occlu_res 192` with
+   `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` (doesn't change results), reusing `chkpnt30000.pth`.
+   Runner gained `SKIP_STAGE1=1` and `BAKE_RES=<n>`. 192 bake started 17:08: 240,894 cells, ~44 cells/s,
+   2.7 GB GPU, ~1.5 h projected. **Open question for the thesis:** whether 256 fits with
+   `expandable_segments` alone (untested).
+
 ### GS-IR runs
 
 | Date | Scene | Settings | Result |
 |---|---|---|---|
 | 2026-10-07 15:33 (laptop time) | `IMG_6556` (`data_gaussianshader`, undistorted) | Runner `scripts/runs/run_gsir_6556.sh` (tmux `gsir`, log `~/gsir_train.log`, out `outputs_gsir/IMG_6556`). Stage 1: 30k, `-r 2` (942x530), `--data_device cpu`, `--eval` (every 8th frame held out), default densify; OOM fallback `--densify_grad_threshold 0.0004 --densify_until_iter 7000`. Baking: `--bound 6.0 --valid 6.0 --occlu_res 256 --occlusion 0.4 --cubemap_res 256` (all 650 cameras within 4.63 units of origin, ~92% of 445k SfM points within 6; cell ~4.7 cm); OOM fallback `occlu_res 192`. Stage 2: to 40k, `--indirect --gamma`, metallic off, `brdf_tv 1.0`, `env_tv 0.01`. Export: `exports/IMG_6556_gsir/splat_albedo.ply`, f_dc = (albedo - 0.5)/0.28209 (sRGB albedo due to `--gamma`), f_rest = 0. | Attempt 1: crashed at launch (tensorboard, item 4). Attempt 2: stopped at 4,950 (too slow, item 5). |
-| 2026-10-07 16:06 | `IMG_6556` | Attempt 3: as above but stage 1 `--densify_grad_threshold 0.0004 --densify_until_iter 7000`. | Stage 1 done 16:06-16:54 (48 min, ~10-11 it/s, no errors). Held-out (82 frames): 7k PSNR 24.29 / SSIM 0.838 / L1 0.0408; 30k PSNR 26.29 / SSIM 0.897 / L1 0.0317. Train: 7k 24.75 / 0.832; 30k 27.31 / 0.905. GPU peak ~3.9 GB near 7k, then steady 3.5 GB; 78-82 °C; WSL RAM steady 7.1 GB. `chkpnt30000.pth` 1.38 GB. (Not directly comparable: nerfstudio held-out median on IMG_6556 was 21.2 dB at full res, different split.) Baking started 16:54 (`occlu_res 256`, bound 6.0): 420,159 occupied cells at ~38 cells/s (6,155 after 2.5 min) = ~3 h projected; GPU 2.9 GB, 71 °C, RAM 2.8 GB. Baking, not training, is the slow step on this laptop at 256. Asked the user whether to re-bake at 192/128. |
+| 2026-10-07 16:06 | `IMG_6556` | Attempt 3: as above but stage 1 `--densify_grad_threshold 0.0004 --densify_until_iter 7000`. | Stage 1 done 16:06-16:54 (48 min, ~10-11 it/s, no errors). Held-out (82 frames): 7k PSNR 24.29 / SSIM 0.838 / L1 0.0408; 30k PSNR 26.29 / SSIM 0.897 / L1 0.0317. Train: 7k 24.75 / 0.832; 30k 27.31 / 0.905. GPU peak ~3.9 GB near 7k, then steady 3.5 GB; 78-82 °C; WSL RAM steady 7.1 GB. `chkpnt30000.pth` 1.38 GB. (Not directly comparable: nerfstudio held-out median on IMG_6556 was 21.2 dB at full res, different split.) Baking started 16:54 (`occlu_res 256`, bound 6.0): 420,159 occupied cells at ~38 cells/s (6,155 after 2.5 min) = ~3 h projected; GPU 2.9 GB, 71 °C, RAM 2.8 GB. Baking, not training, is the slow step on this laptop at 256. Stopped at 7% (VRAM full, item 7); re-baked at 192 from 17:08 (240,894 cells, ~44 cells/s, ~1.5 h). |
