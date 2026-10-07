@@ -30,8 +30,7 @@ MAX_JOBS=2 ./scripts/make_splat.sh /path/to/video.mp4 my_scene   # generates exp
 ```
 See `docs/quickstart.md` for what each step does, WSL2/Windows setup, and why `MAX_JOBS=2`.
 
-The repo lives on branch **`claude/clever-hawking-j0d7up`** (`main` only has an older README):
-`git clone https://github.com/thebhanusingh/Claude_Test && cd Claude_Test && git checkout claude/clever-hawking-j0d7up`.
+Everything is on `main`: `git clone https://github.com/thebhanusingh/Claude_Test && cd Claude_Test`.
 
 **Quality settings.** `make_splat.sh` defaults are tuned for an 8 GB laptop GPU. Override them with env vars:
 `METHOD=splatfacto-big` (needs about 16 GB+ VRAM at 1080p), `MATCHING=exhaustive|sequential|vocab_tree`, and

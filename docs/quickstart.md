@@ -35,7 +35,6 @@ run.
 ```bash
 git clone https://github.com/thebhanusingh/Claude_Test
 cd Claude_Test
-git checkout claude/clever-hawking-j0d7up
 ```
 
 **On Windows**, this needs WSL2 (the `.sh` scripts need real bash):
