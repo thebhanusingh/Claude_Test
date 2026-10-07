@@ -265,3 +265,12 @@ from source, suggested values): project file `gs-ir/gs-ir-settings.md`.
 3. **Auto mode blocks on the laptop session** (2026-10-07): reading the install log (flagged as output
    of externally sourced code) and starting cloudflared tunnels. Neither shows a permission prompt,
    so neither can be approved remotely; both need a permission rule on the laptop.
+4. **First GS-IR training launch crashed: `NameError: SummaryWriter`** (2026-10-07). tensorboard wasn't
+   in the `gsir` env (GS-IR imports it optionally and then uses it anyway). Fix: installed tensorboard into
+   `gsir` and relaunched. Failed log kept as `~/gsir_train_attempt1.log`.
+
+### GS-IR runs
+
+| Date | Scene | Settings | Result |
+|---|---|---|---|
+| 2026-10-07 15:33 (laptop time) | `IMG_6556` (`data_gaussianshader`, undistorted) | Runner `scripts/runs/run_gsir_6556.sh` (tmux `gsir`, log `~/gsir_train.log`, out `outputs_gsir/IMG_6556`). Stage 1: 30k, `-r 2` (942x530), `--data_device cpu`, `--eval` (every 8th frame held out), default densify; OOM fallback `--densify_grad_threshold 0.0004 --densify_until_iter 7000`. Baking: `--bound 6.0 --valid 6.0 --occlu_res 256 --occlusion 0.4 --cubemap_res 256` (all 650 cameras within 4.63 units of origin, ~92% of 445k SfM points within 6; cell ~4.7 cm); OOM fallback `occlu_res 192`. Stage 2: to 40k, `--indirect --gamma`, metallic off, `brdf_tv 1.0`, `env_tv 0.01`. Export: `exports/IMG_6556_gsir/splat_albedo.ply`, f_dc = (albedo - 0.5)/0.28209 (sRGB albedo due to `--gamma`), f_rest = 0. | Running. Stage 1 at ~14 it/s (~35 min est.), GPU ~1.2 GB, 66 °C, WSL RAM ~11 of 15 GB (watched). |
