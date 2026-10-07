@@ -269,8 +269,19 @@ from source, suggested values): project file `gs-ir/gs-ir-settings.md`.
    in the `gsir` env (GS-IR imports it optionally and then uses it anyway). Fix: installed tensorboard into
    `gsir` and relaunched. Failed log kept as `~/gsir_train_attempt1.log`.
 
+5. **GS-IR stage 1 with default densification slowed to a crawl on 8 GB** (2026-10-07, run attempt 2,
+   started 15:33). Grad 0.0002, densify until 15k: ~14 it/s at first, but by 16:05 GPU memory reached
+   7.1 of 8 GB and at iteration 4,950/30,000 it was 4.46 s/it (~31 h projected; loss 0.348). No crash, so the
+   OOM retry never triggered. Same spill-to-RAM pattern as GaussianShader/splatfacto-big on this laptop.
+   Fix: stopped it and restarted stage 1 at 16:06 with `--densify_grad_threshold 0.0004 --densify_until_iter 7000`
+   (the GaussianShader settings that fit here). Kept: `~/gsir_train_attempt2_slow.log`,
+   `outputs_gsir/IMG_6556_attempt2_slow`. **Rule:** on this laptop, slowdown (not a crash) is the failure
+   signal; a watcher should trigger the fallback when s/it rises past a threshold or VRAM passes ~7 GB.
+6. **Progress watcher sent nothing during attempt 2** (2026-10-07). Replaced with `~/gsir_watch.sh`.
+
 ### GS-IR runs
 
 | Date | Scene | Settings | Result |
 |---|---|---|---|
-| 2026-10-07 15:33 (laptop time) | `IMG_6556` (`data_gaussianshader`, undistorted) | Runner `scripts/runs/run_gsir_6556.sh` (tmux `gsir`, log `~/gsir_train.log`, out `outputs_gsir/IMG_6556`). Stage 1: 30k, `-r 2` (942x530), `--data_device cpu`, `--eval` (every 8th frame held out), default densify; OOM fallback `--densify_grad_threshold 0.0004 --densify_until_iter 7000`. Baking: `--bound 6.0 --valid 6.0 --occlu_res 256 --occlusion 0.4 --cubemap_res 256` (all 650 cameras within 4.63 units of origin, ~92% of 445k SfM points within 6; cell ~4.7 cm); OOM fallback `occlu_res 192`. Stage 2: to 40k, `--indirect --gamma`, metallic off, `brdf_tv 1.0`, `env_tv 0.01`. Export: `exports/IMG_6556_gsir/splat_albedo.ply`, f_dc = (albedo - 0.5)/0.28209 (sRGB albedo due to `--gamma`), f_rest = 0. | Running. Stage 1 at ~14 it/s (~35 min est.), GPU ~1.2 GB, 66 °C, WSL RAM ~11 of 15 GB (watched). |
+| 2026-10-07 15:33 (laptop time) | `IMG_6556` (`data_gaussianshader`, undistorted) | Runner `scripts/runs/run_gsir_6556.sh` (tmux `gsir`, log `~/gsir_train.log`, out `outputs_gsir/IMG_6556`). Stage 1: 30k, `-r 2` (942x530), `--data_device cpu`, `--eval` (every 8th frame held out), default densify; OOM fallback `--densify_grad_threshold 0.0004 --densify_until_iter 7000`. Baking: `--bound 6.0 --valid 6.0 --occlu_res 256 --occlusion 0.4 --cubemap_res 256` (all 650 cameras within 4.63 units of origin, ~92% of 445k SfM points within 6; cell ~4.7 cm); OOM fallback `occlu_res 192`. Stage 2: to 40k, `--indirect --gamma`, metallic off, `brdf_tv 1.0`, `env_tv 0.01`. Export: `exports/IMG_6556_gsir/splat_albedo.ply`, f_dc = (albedo - 0.5)/0.28209 (sRGB albedo due to `--gamma`), f_rest = 0. | Attempt 1: crashed at launch (tensorboard, item 4). Attempt 2: stopped at 4,950 (too slow, item 5). |
+| 2026-10-07 16:06 | `IMG_6556` | Attempt 3: as above but stage 1 `--densify_grad_threshold 0.0004 --densify_until_iter 7000`. | Running. |
