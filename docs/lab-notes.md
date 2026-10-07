@@ -17,6 +17,7 @@ problems back to when something changed.
 | 2026-09-28 | Installed `ttyd` 1.7.7 to `~/.local/bin` | Read-only web terminal, see "Remote viewing". |
 | 2026-09-29 | Installed GitHub CLI `gh` 2.101.0 to `~/.local/bin` | **Not logged in** (device login started, then cancelled at the user's request). To push: `gh auth login --web`, approve the code at github.com/login/device, then `git push`. 6+ local commits are unpushed. The repo is private. |
 | 2026-09-28 | Cloned GaussianShader (commit de77861) to `third_party/GaussianShader`, created a **modern** conda env `gaussian_shader` | The repo's `environment.yml` is a 2022 freeze (Python 3.7, torch 1.10+cu111, local-only pip packages) and can't be created as is. Built instead: Python 3.10, torch 2.4.1+cu124, conda `cuda-toolkit=12.4`, conda gcc/g++ 12 (system gcc 15 is too new for CUDA 12.4), plus plyfile/tqdm/opencv/imageio/scipy/matplotlib/scikit-image/tensorboard/open3d, numpy<2. Log: `setup_gaussianshader.log`. |
+| 2026-10-07 | Created conda env `gsir` for GS-IR (lzhnb/GS-IR, cloned to `~/GS-IR`) | Same recipe as `gaussian_shader`: Python 3.10, torch 2.4.1+cu124, conda `cuda-toolkit=12.4`, conda gcc 12, plus conda-forge `libusb` and build env vars (see "GS-IR shadow removal"). Existing envs untouched. Log `~/gsir_install.log`; failed first attempt kept as `~/gsir_install_attempt1.log`. |
 
 ## Scripts added (repo)
 
@@ -207,3 +208,60 @@ COLMAP (CPU-bound mapper) and the 15.5 GB WSL RAM limit don't improve with a bet
 | Splat viewer | `localhost:7007` (training's built-in viewer, or `ns-viewer --load-config ... --viewer.websocket-port 7007`). Public via `cloudflared tunnel --url http://localhost:7007` (new random link each start). |
 | Terminal dashboard | tmux session `dash` (top: `tail -F` of the current training log; bottom: GPU/RAM every 5 s). Served read-only by `ttyd -p 7681 -i 127.0.0.1 -c murph:<password> tmux attach -r -t dash`, password in `~/.ttyd_pass`, public through a second `cloudflared` tunnel to port 7681. |
 | Stop everything public | `pkill -f "cloudflared tunnel"` and `pkill -f ttyd` |
+
+## GS-IR shadow removal (started 2026-10-07)
+
+Goal: remove hard object shadows from splats for use in Blender (KIRI add-on) and UE5, without
+lengthening the pipeline much. Blender/UE5 splat plugins don't relight; they only read the standard
+PLY fields. So the target output is the shadow-free **albedo written into `f_dc`, with `f_rest` zeroed**.
+
+### Method selection (2026-10-07)
+
+Compared 3DGS inverse-rendering methods that separate shadows/visibility from albedo. Ranked fastest
+viable first. Runtime multipliers are estimates from each method's design, not measured here.
+
+| Rank | Option | Shadow handling | Inputs | Cost | Code |
+|---|---|---|---|---|---|
+| 1 | Diffuse light at capture (overcast, softbox, cross-polarised) | Avoids shadows | Capture change | None | n/a |
+| 2 | SideFX Labs "Delight GSplats" (Houdini, Aug 2026 update) | Removes baked lighting from an existing splat | Existing splat | No retrain; speed unknown | Houdini Labs |
+| 3 | **GS-IR** (CVPR 2024) | Baked occlusion volumes (probes) | COLMAP / transforms | ~1-1.5x 3DGS (est.) | Public |
+| 4 | Relightable 3D Gaussians / R3DG (ECCV 2024) | BVH ray-traced visibility | Same as 3DGS | ~2-3x (est.) | Public |
+| 5 | IRGS (CVPR 2025) | 2D-Gaussian ray tracing, indirect light | Same as 3DGS (2DGS surfels) | Slowest | Public |
+| - | SSD-GS (ICLR 2026), GS³ | Shadow decomposition | Point-light / OLAT captures | n/a | Public; doesn't fit casual captures |
+| - | GHPT (CVPR 2026), GaRe | Path tracing / outdoor collections | - | - | No usable code found |
+
+GS-IR chosen as the first method to try on existing captures. Full settings sheet (defaults read
+from source, suggested values): project file `gs-ir/gs-ir-settings.md`.
+
+### Setup on Murph (2026-10-07)
+
+- GPU: RTX 4070 Laptop, 8 GB (driver 610.47). 8 GB is tight for GS-IR; plan `-r 2` or `-r 4`.
+- First scene: `data_gaussianshader/IMG_6556` (undistorted, `images/` + `sparse/0`, PINHOLE,
+  650 images at 1884x1059). Usable as-is. The other scenes (`data/IMG_6556`, `IMG_6557`,
+  `my_scene_600f`, `my_scene`) have OPENCV cameras at 1920x1080 and need undistorting first.
+  IMG_6557 previously ran out of memory on this GPU.
+- Live view: tmux `dash` + ttyd on `localhost:7681` restarted. Public cloudflared tunnel was **blocked
+  by Claude Code auto mode** ("External Ingress Tunnel"), so there's no phone link until it's allowed
+  on the laptop.
+
+### Problems found and fixes (GS-IR)
+
+1. **GS-IR CUDA extension failed to compile: `identifier "uint32_t" is undefined`** (2026-10-07,
+   install attempt 1). Newer gcc no longer pulls in `<cstdint>` transitively.
+   Fix: added `#include <cstdint>` to `gs-ir/src/utils.h`, `gs-ir/src/pbr_utils.cuh` and
+   `submodules/diff-gaussian-rasterization/cuda_rasterizer/rasterizer_impl.h` (local edits in `~/GS-IR`,
+   not upstream). Attempt 2: gs-ir, simple-knn, diff-gaussian-rasterization and nvdiffrast all build;
+   `torch.cuda.is_available()` is True.
+2. **Import check after the build failed** (2026-10-07, attempt 2). The script's success line didn't
+   print and the following renderutils JIT step didn't run. The log couldn't be read (auto mode block), so
+   each module was imported directly in `gsir`. Two causes found and fixed:
+   - open3d failed to load because `libusb` was missing. Fix: `conda install -c conda-forge libusb` into `gsir`.
+   - GS-IR's renderutils JIT build couldn't find the CUDA headers or WSL's `libcuda`. Fix: env vars saved
+     into the `gsir` env (applied on activate): `CUDA_HOME`, `CPATH`, `LIBRARY_PATH` (incl. `/usr/lib/wsl/lib`),
+     `CC`/`CXX` = conda gcc 12, `TORCH_CUDA_ARCH_LIST=8.9`.
+   Result: torch 2.4.1+cu124 sees the GPU; kornia, opencv, open3d 0.20, nvdiffrast (CUDA context starts),
+   gs_ir, simple_knn, diff_gaussian_rasterization, plyfile and lpips all import; renderutils compiles and
+   loads. **Install complete; no training run yet.**
+3. **Auto mode blocks on the laptop session** (2026-10-07): reading the install log (flagged as output
+   of externally sourced code) and starting cloudflared tunnels. Neither shows a permission prompt,
+   so neither can be approved remotely; both need a permission rule on the laptop.
