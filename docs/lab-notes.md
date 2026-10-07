@@ -1,0 +1,209 @@
+# Lab notes: changes, new tools, and problems found
+
+Running log of everything changed or added on the home laptop (`Murph`, WSL2 Ubuntu 26.04,
+RTX 4070 Laptop 8 GB, 15.5 GB RAM visible to WSL, 32 cores), mostly driven remotely via
+Claude Remote Control. Newest entries at the bottom of each section. Use this to trace
+problems back to when something changed.
+
+## Machine / environment
+
+| Date | Change | Notes |
+|---|---|---|
+| 2026-09-23 | Checked env | Claude Code 2.1.280, driver 610.47, system `nvcc` 12.4, PyTorch 2.11.0+cu128 in `gsplat` env. nvcc/PyTorch CUDA mismatch (12.4 vs 12.8) is the likely reason `torch.compile` had to be disabled (`TORCHDYNAMO_DISABLE=1`). |
+| 2026-09-23 | Installed `cloudflared` 2026.9.1 to `~/.local/bin` | No sudo. Used for public "quick tunnel" links (random 4-word `*.trycloudflare.com` names, new each start). |
+| 2026-09-23 | Keep-alive heartbeat `~/.local/bin/keepalive.sh` | Logs `viewer:up/DOWN tunnel:up/DOWN` to `~/keepalive.log` every 5 min. Only logs, never restarts anything. |
+| 2026-09-23 | Windows keep-awake (hidden PowerShell loop calling `SetThreadExecutionState`) | Asks Windows not to sleep while it runs; changes no settings. Does NOT stop lid-close sleep. Could not verify with `powercfg /requests` (needs admin). |
+| 2026-09-28 | Installed COLMAP 4.1.1 in a separate conda env `colmap4` (+ `openimageio=3.1`, which the first install was missing) | Has `global_mapper` (GLOMAP merged into COLMAP). Not used in any pipeline yet. Harmless warning: `libcusolver.so.12: no version information available`. |
+| 2026-09-28 | Installed `ttyd` 1.7.7 to `~/.local/bin` | Read-only web terminal, see "Remote viewing". |
+| 2026-09-29 | Installed GitHub CLI `gh` 2.101.0 to `~/.local/bin` | **Not logged in** (device login started, then cancelled at the user's request). To push: `gh auth login --web`, approve the code at github.com/login/device, then `git push`. 6+ local commits are unpushed. The repo is private. |
+| 2026-09-28 | Cloned GaussianShader (commit de77861) to `third_party/GaussianShader`, created a **modern** conda env `gaussian_shader` | The repo's `environment.yml` is a 2022 freeze (Python 3.7, torch 1.10+cu111, local-only pip packages) and can't be created as is. Built instead: Python 3.10, torch 2.4.1+cu124, conda `cuda-toolkit=12.4`, conda gcc/g++ 12 (system gcc 15 is too new for CUDA 12.4), plus plyfile/tqdm/opencv/imageio/scipy/matplotlib/scikit-image/tensorboard/open3d, numpy<2. Log: `setup_gaussianshader.log`. |
+
+## Scripts added (repo)
+
+| File | Purpose |
+|---|---|
+| `scripts/select_sharp_frames.py` | Scores every video frame by Laplacian variance and keeps the sharpest frame per window (default 650). Replaces ffmpeg's evenly spaced extraction. |
+| `scripts/fix_colmap_model.py` | Picks the COLMAP sub-model with the most images, bundle-adjusts it (incl. principal point), writes `transforms.json` + `sparse_pc.ply` in original COLMAP world coordinates. Original nerfstudio outputs kept as `*_nsprocess.*`. |
+| `scripts/make_splat_hq.sh` | Full HQ pipeline: sharp frames -> `ns-process-data images` -> `fix_colmap_model.py` -> `splatfacto-big` (falls back to `splatfacto` on failure) -> export. Skips steps 1-3 if the scene already has poses. |
+| `scripts/runs/*.sh` | One-off runners for specific scenes (see `scripts/runs/README.md`). **Moved out of the repo root on 2026-09-30.** The script names used in the entries below now live in that folder. |
+| `scripts/watch_nerfstudio.sh` (was `watch_600f.sh`) | Watcher: status line every 15 s to `<log>_status.log`; stdout summary every 5 min, on stage change, errors, finish, or process disappearing. Args: `PID LOG [DONE_PATTERN]`. |
+| `scripts/watch_gaussianshader.sh` (was `watch_gs.sh`) | Same idea for GaussianShader's tqdm progress bar. Args: `PID LOG TOTAL_ITERS`. |
+| 2026-09-30 repo corrections | `setup_env.sh` patches nerfstudio for COLMAP >= 3.12 option names. `make_splat.sh` gained `METHOD` / `MATCHING` / `DOWNSCALE` overrides, a split-COLMAP check (refuses to train if fewer than 80% of frames are posed) and nerfstudio-viewer-first wording. `*.log` and local artifacts are gitignored. Docs updated for gcc 15 / conda CUDA headers / WSL admin. |
+
+## Training runs
+
+| Date | Scene | Settings | Result |
+|---|---|---|---|
+| 2026-09-16 | `my_scene` (IMG_6449, 313 frames) | splatfacto 30k | Finished (`2026-09-16_204930`). Five earlier runs that day have no checkpoint. |
+| 2026-09-23 | `my_scene` retrain | splatfacto 30k | Stopped at 64 % to make room for the next run. |
+| 2026-09-23 | `my_scene_600f` (IMG_6449, 659 frames) | splatfacto 7k, `cache-images cpu`, `stop-split-at 5000` | 1st try trained on only 2 frames (see Problem 1), stopped. Retry OK: 3.5 min, ~1 GB GPU, `exports/my_scene_600f/splat.ply` 92 MB. Useless 2-frame run: `outputs/my_scene_600f/splatfacto/2026-09-23_153700/`. |
+| 2026-09-23 | `my_scene_600f_hq` | splatfacto 30k, full res (`--downscale-factor 1`), `cache-images cpu`, COLMAP coords (`--orientation-method none --center-method none --auto-scale-poses False`) | OK, 54 min, peak ~2.2 GB GPU, 10 GB RAM, GPU up to 81 °C. 595k Gaussians, `exports/my_scene_600f_hq/splat.ply` 148 MB. Aligned to COLMAP (median 0.058 units to nearest SfM point). |
+| 2026-09-28 | `IMG_6556`, then `IMG_6557` (two separate scenes) | `make_splat_hq.sh`: 650 sharpest frames, splatfacto-big 30k, full res, `cache-images cpu`, pose optimisation `SO3xR3`, COLMAP coords | IMG_6556 COLMAP: all 650 frames posed in one model (13:39-14:29). 1st training try stopped for low RAM (Problem 4); restarted 14:35 without `--eval-mode all`. |
+
+## Problems found and fixes
+
+1. **COLMAP split the scene; nerfstudio used the wrong piece** (2026-09-23, `my_scene_600f`).
+   `ns-process-data` always reads `colmap/sparse/0`, which held 2 images; `sparse/1` held all 659.
+   It only printed "COLMAP only found poses for 0.30% of the images" and trained anyway.
+   Fix: rebuild `transforms.json` from the largest model -> now automatic in `fix_colmap_model.py`.
+   **Check:** always compare the frame count in `transforms.json` with the image count before training.
+
+2. **Exported splat didn't line up with SfM points** (2026-09-23). Nerfstudio re-orients, re-centres
+   and re-scales the scene by default. Fix: `keep_original_world_coordinate=True` when writing
+   transforms + `--orientation-method none --center-method none --auto-scale-poses False`.
+   Nerfstudio still records an axis swap in `dataparser_transforms.json`, but measurement showed the
+   exported `.ply` already matches COLMAP coordinates. **Side effect:** the viewer's orbit controls feel
+   tilted; use "Reset Up Direction" in the viewer Controls panel.
+
+3. **Viewer `AssertionError` traceback in websockets `_drain_helper`**: harmless, happens when a browser
+   tab connects or disconnects during training. Training continues. The watcher now filters it out.
+
+4. **RAM nearly exhausted with `--eval-mode all`** (2026-09-28, IMG_6556). It made nerfstudio cache all
+   650 full-res frames twice (as eval and as train images), so 11.8 GB in `ns-train`, 0.7 GB free, swap full.
+   Stopped before WSL could die. Fix: removed `--eval-mode all` (back to the default 90/10 split).
+   **Rule of thumb:** ~650 full-res 1080p frames with `cache-images cpu` is about 10-11 GB RAM, near the
+   WSL limit. More frames require raising the WSL memory limit (`.wslconfig`, needs `wsl --shutdown`
+   at the laptop, which kills Remote Control).
+
+5. **Laptop slept overnight** (2026-09-27 18:15 to 2026-09-28): heartbeat log has a gap. Keep-awake
+   does not prevent lid-close or unplugged sleep. Keep plugged in, lid open or lid action "Do nothing".
+
+6. **Remote Control auth expired** once (`OAuth access token has been revoked`, seen in the tmux
+   `claude` session log). It recovered on its own; if Remote Control stops responding, run `/login`
+   at the laptop.
+
+7. **COLMAP 4 cannot open databases created by COLMAP 3.10** ("Migrating pose_priors table ...
+   SQLite error"). If using `colmap4`, run the whole pipeline (features, matching, mapper) with it.
+
+8. **splatfacto-big nearly fills the 8 GB GPU** (2026-09-28, IMG_6556, 650 full-res frames).
+   GPU memory: 3.0 GB at step 1.1k, 5.3 GB at 5.7k, 7.2 GB at 8.2k (densification continues to 15k).
+   Step time went from about 40 ms to about 194 ms. The user chose to let it run. Risk on WSL: the NVIDIA
+   driver may spill into Windows system RAM (sysmem fallback) instead of failing with a clean OOM, which
+   slows training badly and never triggers the script's fallback to `splatfacto`.
+
+   Outcome: at step ~10.6k the step time hit 562 ms (likely spilling), so the run was stopped and
+   resumed from the step-10000 checkpoint (see Problems 10 and 11).
+
+10. **Resuming a checkpoint fails with `WeightsUnpickler error: Unsupported global: numpy.core.multiarray.scalar`**
+   (PyTorch 2.11 defaults `torch.load(weights_only=True)`). Fix: `export TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1`
+   before `ns-train --load-dir ...` (safe for our own checkpoints). Also: the first resume script kept going
+   after the failure and started IMG_6557. Runner scripts must `exit` on a failed step.
+
+11. **Resuming mid-densification crashes: `CUDA error: device-side assert ... index out of bounds`**
+   at the first refinement after the resume (step ~10080-10100). The checkpoint does not match the
+   densification bookkeeping. Fix: resume with `--pipeline.model.stop-split-at` <= the checkpoint step (used
+   10000), so no more splitting or culling happens. Result: GPU 7.2 GB -> 6.1 GB, step time 562 ms -> 144 ms.
+   `resume_6556_then_6557.sh` resumes IMG_6556 from `outputs/IMG_6556/splatfacto/2026-09-28_143534/`.
+   `make_splat_hq.sh` now defaults to `STOP_SPLIT=11000` for fresh runs (IMG_6557).
+   (Nerfstudio names the output folder `splatfacto` even for `splatfacto-big`.)
+
+12. **Resume adds `--max-num-iterations` on top of the checkpoint step** (2026-09-28). Resuming at step 10000
+   with `--max-num-iterations 30000` trained to 40000 (the progress display showed 131 %), about 1.5 h longer
+   than expected. When resuming, pass `max_iters - checkpoint_step` (for example 20000).
+   With a viewer tab connected, GPU memory went from 6.1 to 7.9 GB and steps slowed from about 140 ms to
+   400-450 ms. The last ~10k steps took until 18:55. **Keep the viewer closed during training on 8 GB.**
+   Result: `exports/IMG_6556/splat.ply`, 2.89M Gaussians, 717 MB, exported 18:58.
+   IMG_6557 put on hold at the user's request (runner stopped; `export_6556_only.sh` exported IMG_6556 only).
+
+13. **GaussianShader (BRDF/relightable) setup on IMG_6556** (2026-09-28). Steps that were needed:
+   - The CUDA extensions (`diff-gaussian-rasterization`, `simple-knn`, nvdiffrast) build with
+     `CC/CXX=x86_64-conda-linux-gnu-gcc/g++`, `TORCH_CUDA_ARCH_LIST=8.9`, `CUDA_HOME=$CONDA_PREFIX`,
+     `pip install --no-build-isolation`, and `#include <cstdint>` added to `rasterizer_impl.h`.
+   - `open3d` import failed with `libusb-1.0.so.0` missing (same as in gsplat). Fix: `mamba install -n gaussian_shader libusb`.
+   - Its JIT plugin `renderutils_plugin` failed with `cuda_runtime.h: No such file`. The conda CUDA headers are in
+     `$CONDA_PREFIX/targets/x86_64-linux/include`. Fix: `CPATH=$T/include LIBRARY_PATH=$T/lib:$T/lib/stubs:/usr/lib/wsl/lib:$CONDA_PREFIX/lib`.
+   - It only accepts PINHOLE cameras, so run `colmap image_undistorter` on `data/IMG_6556/colmap/sparse/0_refined`
+     -> `data_gaussianshader/IMG_6556` (650 frames, 1884x1059, 2.2 GB), then move `sparse/*.bin` into `sparse/0/`.
+   - Test (500 iters, `-r 2 --data_device cpu`): about 2.5 it/s, about 2.8 GB GPU at iter 500, PSNR 15.3 at iter 500.
+   - `train.py` has **no `--checkpoint_iterations`** (argparse error), so runs can't be resumed. Only `--save_iterations` point clouds.
+   - The full run with default densification (grad 0.0002 until 15k) grew GPU memory about 0.5 GB every 2 min:
+     1.6 GB @640, 3.4 @2280, 4.6 @2990, heading for 8 GB around step 4.5-5k, before the first save at 7k.
+     Stopped at about 3k (21:43-22:05 lost). Restarted 22:06 with `--densify_grad_threshold 0.0004
+     --densify_until_iter 7000` and saves every 5k.
+   - Result: finished 2026-09-29 01:18 (3 h 12 min, about 2.6 it/s). GPU peaked about 3.1 GB, RAM about 6.2 GB, no errors.
+     Train PSNR 24.58 @15k, 25.06 @30k. Snapshots every 5k in `outputs_relightable/IMG_6556/point_cloud/` (about 106 MB each).
+     The heartbeat showed no overnight sleep gaps. The watcher's "finished" notification only reached the chat at 07:27
+     (delivery delay on the session side, not a laptop problem).
+   - Relighting: GaussianShader's `render.py` has no "new envmap" flag. The learned lighting is
+     `brdf_mlp/iteration_N/brdf_mlp.hdr` (lat-long HDR, loaded with `load_env`), so to relight, make a model dir that
+     symlinks `point_cloud`, `cameras.json`, `input.ply`, `cfg_args` and holds a different `.hdr` there.
+     `run_gs_render_6556.sh` renders learned + Poly Haven CC0 `studio_small_08` and `kloppenheim_06` (1k HDRs in
+     `envmaps/`) and writes MP4s to `exports/IMG_6556_relightable/`. Don't use `set -u` in scripts that `source`
+     conda activate (the gcc activation script fails with `SYS_SYSROOT: unbound variable`).
+   - Result: the learned-lighting render matches the input well (frame 300 mean 122.8 vs GT 123.8). Relit with the raw
+     studio HDR it came out washed out (mean 187) with purple/blue streaks in shadowed grass (specular on noisy grass
+     normals). Cause: raw Poly Haven HDRs are much brighter than the learned light (mean radiance 0.129 learned vs
+     0.698 studio = 5.4x, 0.494 sunset = 3.8x). Made `envmaps/*_1k_matched.hdr` scaled to 0.129 and rendered them with
+     `run_gs_render_matched_6556.sh`. Baked cast shadows (sun on grass) stay in any relight; GaussianShader has no shadow model.
+   - **Key finding: GaussianShader only relights the specular (reflection) term.** Frame 570: `diffuse_color` is 0.441 in
+     both the learned and studio renders (unchanged); only `specular_color` changed (0.179 -> 0.439). Its shading is
+     diffuse albedo (not lit by the envmap) + specular tint x reflected env light. So the sun, shade and shadows are
+     baked into the diffuse part. A new envmap only changes reflections. On grass the learned normals are noisy, so the
+     reflected light shows up as "cloudy" haze and purple streaks everywhere (the user reported "lots of cloudy artifacts
+     and too bright"). GaussianShader targets shiny objects; it is not a real relighting method for an outdoor diffuse scene.
+   - GaussianShader `render.py` holds about 12.5 GB RAM (all 650 frames loaded), leaving about 2.6 GB. Don't run it next to COLMAP
+     or nerfstudio training. `run_6557.sh` waits for it to finish.
+
+14. **IMG_6557: splatfacto-big crashed with `RuntimeError: CUDA driver error: device not ready`** (2026-09-29 10:07,
+   step 7390, about 196 ms/step, which suggests VRAM was already spilling to system RAM). This happened despite
+   `stop-split-at 10000` and `expandable_segments`. The script fell back to `splatfacto`, which completed 30k steps (10:07-10:58,
+   about 115 ms/step, GPU about 3.4 GB). Result `exports/IMG_6557/splat.ply`, 1.45M Gaussians, 359 MB. The partial big run is
+   in `outputs/IMG_6557/splatfacto/2026-09-29_095338` (ckpt step 6000).
+   **Monitoring gap:** no watcher ran from about 09:53 to 10:50 (the expiry notice arrived late), so the crash was only
+   reported 45 min later. Conclusion: on 8 GB, splatfacto-big at full res with 650 frames is unreliable. Use
+   `stop-split-at` <= 7000 or plain splatfacto.
+
+15. **Before/after screenshots: `ns-render dataset` pairs a *distorted* `gt-rgb` with an *undistorted* render**
+   (2026-09-29). The offset was about 0 px in the centre and about ±12 px in opposite corners, which gave a misleading PSNR of about 15 dB.
+   Fix: `cv2.undistort(gt, K, D)` with the same K (OPENCV k1,k2,p1,p2 from `transforms.json`), then crop 30 px. This gives
+   held-out PSNR medians of **IMG_6556 21.2 dB** (19.7-23.4) and **IMG_6557 22.5 dB** (20.0-24.5). Grass-heavy scenes
+   score low on PSNR even when they look right. Also note: with `camera-optimizer SO3xR3`, held-out views use unrefined
+   poses. Images are in `exports/before_after/` (median, best and worst per scene, plus relighting panels). Also: run
+   `ns-render` with the gsplat env *activated* (otherwise "Ninja is required").
+
+16. **Memory/temperature observations:** COLMAP feature matching pushed the GPU to 86 °C (throttling
+   starts about 87 °C). splatfacto-big used about 3-4.7 GB GPU early in training, compared with about
+   2.2 GB peak for splatfacto.
+
+## Feedback from the school machine (2026-09-29)
+
+Second machine: RTX PRO 6000 Blackwell (96 GB), fresh WSL Ubuntu 26.04, set up from the **pushed** repo (without this
+laptop's 6+ unpushed commits). The Claude session there reported:
+
+| Problem there | Cause | Status on this laptop / in local commits |
+|---|---|---|
+| COLMAP crashed on `--SiftExtraction.use_gpu` | `environment.yml` leaves `colmap` unpinned; conda gave 3.13, which renamed the option (nerfstudio's `ns-process-data` still passes the old name) | Not hit here (laptop has COLMAP 3.10). **Unfixed**, and affects both `make_splat.sh` and `make_splat_hq.sh`. Fix: pin `colmap<3.12` or patch the option names |
+| CUDA 12.4 nvcc vs gcc 15 | Docs assume older Ubuntu; `wsl --install` now gives 26.04 | Hit here too (GaussianShader). Worked around with **conda `gxx_linux-64=12`** in the env (problem 13). Not in README/setup_env.sh |
+| `cuda_runtime.h` not found building gsplat | conda CUDA headers live in `$CONDA_PREFIX/targets/x86_64-linux/include` | Hit here too. Fix: `CPATH`/`LIBRARY_PATH` (problem 13, `run_gs_6556.sh`). Only in unpushed commits |
+| Branch only reachable via the PR; `main` has only a README | Work lives on `claude/clever-hawking-j0d7up` | Still true. The quickstart should name the branch, or merge |
+| Quality settings hardcoded, nerfstudio silently caps width at 1600 px | `make_splat.sh` has fixed method/matching/resolution | `scripts/make_splat_hq.sh` (unpushed) does full res (`--downscale-factor 1`), splatfacto-big, and takes frames/iters/`STOP_SPLIT` as args, but method/matching aren't overridable yet |
+| Docs contradict (SuperSplat vs nerfstudio viewer; admin needed for WSL vs no admin) | Written at different times | Unfixed |
+| Only ffmpeg pinned | nerfstudio, COLMAP, CUDA libs float | Unfixed. COLMAP was the first to break |
+
+**Coordination:** push this laptop's commits **before** the school session writes its fixes, so the two don't conflict
+(`gh auth login --web`, then `git push`). Then the school session can build on `make_splat_hq.sh` and these notes.
+
+## Performance on other GPUs (estimates, 2026-09-29)
+
+Projected from our own runs (650 frames, 1080p, 30k steps) + gsplat's benchmark (3.2M Gaussians, 30k steps: 19 min,
+5.6 GB on an A100, smaller images) + bandwidth/VRAM specs. Not measured.
+
+| GPU | VRAM | splatfacto | splatfacto-big uncapped | GaussianShader full res |
+|---|---|---|---|---|
+| RTX 4070 Laptop (ours) | 8 GB | ~50 min (measured) | won't fit (measured) | half res only, 3 h 12 min (measured) |
+| RTX 4080 / 4070 Ti Super | 16 GB | ~25 min | ~50-70 min | ~2-2.5 h |
+| RTX 4090 | 24 GB | ~15-20 min | ~35-45 min | ~1-1.5 h |
+| RTX 5090 | 32 GB | ~12-15 min | ~25-35 min | ~45-60 min |
+| A100 40/80 GB | 40-80 GB | ~15-20 min | ~30-40 min | ~1-1.5 h |
+| H100 | 80 GB | ~10-15 min | ~20-30 min | ~40-60 min |
+
+COLMAP (CPU-bound mapper) and the 15.5 GB WSL RAM limit don't improve with a better GPU. 16 GB+ VRAM is the threshold for uncapped splatfacto-big.
+
+## Remote viewing
+
+| Thing | How |
+|---|---|
+| Remote Control | `claude remote-control` running in tmux session `claude` (survives closing the Ubuntu window). |
+| Splat viewer | `localhost:7007` (training's built-in viewer, or `ns-viewer --load-config ... --viewer.websocket-port 7007`). Public via `cloudflared tunnel --url http://localhost:7007` (new random link each start). |
+| Terminal dashboard | tmux session `dash` (top: `tail -F` of the current training log; bottom: GPU/RAM every 5 s). Served read-only by `ttyd -p 7681 -i 127.0.0.1 -c murph:<password> tmux attach -r -t dash`, password in `~/.ttyd_pass`, public through a second `cloudflared` tunnel to port 7681. |
+| Stop everything public | `pkill -f "cloudflared tunnel"` and `pkill -f ttyd` |

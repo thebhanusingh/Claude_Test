@@ -1,0 +1,25 @@
+# Video/data pipeline artifacts (large binaries, don't commit)
+/data/
+/outputs/
+/exports/
+/data_gaussianshader/
+/outputs_relightable/
+/third_party/
+*.mp4
+*.mov
+*.mkv
+*.avi
+
+# Python / conda
+__pycache__/
+*.pyc
+.venv/
+
+# Run logs and watcher status files (kept locally, not versioned)
+*.log
+
+# Local-only artifacts
+/envmaps/
+/school_results/
+screenshot.png
+Miniforge3-*.sh
