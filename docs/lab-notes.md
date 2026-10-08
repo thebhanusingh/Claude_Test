@@ -451,3 +451,27 @@ Problems found and fixes (round 3):
    Next run uses `--ground-tol 0.03`.
 Synthetic check (cloud, true linear ratio 5, auto estimate 6.75): scale/rgb at cap 12 pushed shadowed splats to
 max 0.687 sRGB, past the lit 0.600. Target/lum: max 0.600, mean per-splat gain 4.99, lit splats unchanged.
+
+**Laptop round 4 on IMG_6556 (2026-10-08).** Script `b0c0bf8`. Flags: `--every 2 --ground-only --dark-gate
+--lo 0.15 --hi 0.45 --ground-spread 0.06 --ground-tol 0.03`, defaults `--colour lum --mode target`.
+Ground plane with tol 0.03: normal (-0.006, -0.948, -0.317), up alignment 0.999, 892,073 Gaussians near it.
+Ground luminance: lit median 0.6966, shadow median 0.0407 (ratio 17.11). Counts: dark gate 76,923 -> 64,032,
+spread -> 97,317 (= changed_gaussians), full weight 37,051. Raw gain 11.291 / 11.584 / 6.829. 159 s per run.
+Renders `exports/IMG_6556_shadowfix_v4_compare/` (photo | before | round-1 g5.5 | E | F), close-ups
+`crop_00321_before_g55_E.jpg`, `crop_00321_E_F.jpg`.
+
+| Run | Max gain | Luminance gain | Mean gain per touched splat | Shadow/lit ratio (321/481/161) | Nearby sunlit change | Saturation shadow/sunlit (321, 481, 161) |
+|---|---|---|---|---|---|---|
+| before | - | - | - | 0.44 / 0.38 / 0.48 | - | 0.41/0.32, 0.54/0.46, 0.37/0.29 |
+| round 1 g5.5 | - | 5.5 rgb | - | 0.77 / 0.68 / 0.84 | +19 / +15 / +15% (approx.*) | 0.35/0.30, 0.48/0.44, 0.32/0.27 |
+| v4 E (`exports/IMG_6556_shadowfix_v4_e/`) | 6 | 6.0 | 3.83 | 0.68 / 0.65 / 0.64 | +3.5 / +7.3 / +2.0% | 0.39/0.32, 0.51/0.46, 0.36/0.30 |
+| v4 F (`exports/IMG_6556_shadowfix_v4_f/`) | 12 | 11.18 | 5.89 | 0.79 / 0.76 / 0.72 | +4.6 / +10.5 / +2.6% | 0.39/0.33, 0.51/0.47, 0.36/0.30 |
+
+\* The 5-panel renders shift the round-1 crop relative to its mask. Earlier 4-panel measurement gave +7-10%.
+
+Result: **F is the most natural so far.** Shadow lifted to 0.72-0.79 of the sunlit grass, grass colour and
+saturation stay close to the original photo (no neon), and the sunlit grass beside the shadows barely changes. Round 1 lowers
+saturation (washed out, whitish speckles, pale halo). Chair-leg bases are no longer pale with tol 0.03.
+Not solved: the shadow is still visible as a lighter patch with a faint darker outline. Likely cause: edge splats
+with partial weight (ramp `--lo` 0.15 to `--hi` 0.45). Next: narrower/lower ramp; the dark gate and lit ceiling
+should keep lit splats safe.
