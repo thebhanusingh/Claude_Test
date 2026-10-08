@@ -6,7 +6,9 @@ Handheld video has motion blur on many frames; picking the sharpest frame per wi
 than ffmpeg's evenly spaced extraction.
 
 Usage: select_sharp_frames.py <video> <out_dir> [num_frames]
+Env MAX_WIDTH (optional): downscale written frames to at most this width, e.g. 1920 for 4K video.
 """
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +17,7 @@ import numpy as np
 
 video, out_dir = sys.argv[1], Path(sys.argv[2])
 num_frames = int(sys.argv[3]) if len(sys.argv) > 3 else 650
+max_width = int(os.environ.get("MAX_WIDTH", "0"))
 out_dir.mkdir(parents=True, exist_ok=True)
 
 # Pass 1: sharpness score for every frame (on a downscaled grayscale copy).
@@ -45,6 +48,9 @@ while True:
         break
     if idx in picks:
         written += 1
+        if max_width and frame.shape[1] > max_width:
+            h = round(frame.shape[0] * max_width / frame.shape[1])
+            frame = cv2.resize(frame, (max_width, h), interpolation=cv2.INTER_AREA)
         cv2.imwrite(str(out_dir / f"frame_{written:05d}.png"), frame)
     idx += 1
 cap.release()

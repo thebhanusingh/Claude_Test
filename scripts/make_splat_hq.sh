@@ -8,6 +8,9 @@
 #           -> export .ply
 #
 # Usage: ./scripts/make_splat_hq.sh <video_path> [scene_name] [num_frames] [max_iters]
+# Optional env: MAX_WIDTH (downscale frames, e.g. 1920 for 4K), MATCHING (ns-process-data matching method,
+#   e.g. exhaustive), STOP_SPLIT (default 10000; use <= 7000 for splatfacto-big on 8 GB),
+#   EXTRA_TRAIN_ARGS (extra ns-train model flags, e.g. "--pipeline.model.rasterize-mode antialiased").
 set -uo pipefail
 source ~/miniforge3/bin/activate gsplat
 
@@ -27,7 +30,7 @@ else
   python scripts/select_sharp_frames.py "$VIDEO" "$DATA/raw_frames" "$NUM_FRAMES" || { echo "FRAME SELECTION FAILED"; exit 1; }
 
   echo "=== [2/5] COLMAP ($(date)) ==="
-  ns-process-data images --data "$DATA/raw_frames" --output-dir "$DATA" || { echo "PROCESSING FAILED"; exit 1; }
+  ns-process-data images --data "$DATA/raw_frames" --output-dir "$DATA" ${MATCHING:+--matching-method "$MATCHING"} || { echo "PROCESSING FAILED"; exit 1; }
 
   echo "=== [3/5] Fixing COLMAP model ($(date)) ==="
   python scripts/fix_colmap_model.py "$DATA" || { echo "POSE FIX FAILED"; exit 1; }
@@ -45,6 +48,7 @@ train() {  # $1 = method
     --pipeline.model.camera-optimizer.mode SO3xR3 \
     --pipeline.model.stop-split-at "${STOP_SPLIT:-10000}" \
     --viewer.quit-on-train-completion True \
+    ${EXTRA_TRAIN_ARGS:-} \
     nerfstudio-data --data "$DATA" \
     --downscale-factor 1 \
     --orientation-method none --center-method none --auto-scale-poses False
