@@ -475,3 +475,32 @@ saturation (washed out, whitish speckles, pale halo). Chair-leg bases are no lon
 Not solved: the shadow is still visible as a lighter patch with a faint darker outline. Likely cause: edge splats
 with partial weight (ramp `--lo` 0.15 to `--hi` 0.45). Next: narrower/lower ramp; the dark gate and lit ceiling
 should keep lit splats safe.
+
+**Laptop round 5 on IMG_6556 (2026-10-08).** Script `b0c0bf8`, flags as v4 F (`--every 2 --ground-only
+--dark-gate --ground-spread 0.06 --ground-tol 0.03 --max-gain 12`), only the weight ramp changed. Luminance gain
+11.18, ceiling 0.6966. All versions re-measured in one layout (photo | before | F | G | H). Renders
+`exports/IMG_6556_shadowfix_v5_compare/`, close-up `crop_00321_before_F_G_H.jpg`.
+
+| Run | Ramp lo-hi | Dark gate | After spread | Full weight | Mean gain | Whole shadow | Edge band ±3 px | Core (6 px in) | Nearby sunlit | Time |
+|---|---|---|---|---|---|---|---|---|---|---|
+| before | - | - | - | - | - | 0.44 / 0.38 / 0.48 | 0.71 / 0.73 / 0.68 | 0.35 / 0.27 / 0.37 | - | - |
+| v4 F | 0.15-0.45 | 76,923 -> 64,032 | 97,317 | 37,051 | 5.89 | 0.79 / 0.76 / 0.72 | 0.86 / 0.94 / 0.80 | 0.77 / 0.64 / 0.70 | +4.6 / +10.5 / +2.6% | 159 s |
+| v5 G (`..._v5_g/`) | 0.10-0.25 | 108,807 -> 81,604 | 145,600 | 41,017 | 5.00 | 0.79 / 0.75 / 0.71 | 0.86 / 0.93 / 0.80 | 0.76 / 0.63 / 0.69 | +5.8 / +11.8 / +3.5% | 161 s |
+| v5 H (`..._v5_h/`) | 0.05-0.15 | 224,278 -> 142,240 | 261,707 | 45,660 | 4.26 | 0.78 / 0.74 / 0.71 | 0.85 / 0.93 / 0.79 | 0.75 / 0.63 / 0.69 | +7.2 / +13.3 / +4.4% | 162 s |
+
+(Frames 321 / 481 / 161. Saturation identical for F, G, H: 0.39/0.33, 0.51/0.47, 0.36/0.30.)
+
+Result: **a lower ramp doesn't help; F stays the best.** The "dark outline" is not an edge problem: the edge band is
+already brighter than the core in every version (F: 0.86 vs 0.77). What reads as an outline is a darker core
+with a slightly brighter rim. A lower ramp only adds weakly flagged splats on the lit side (more sunlit change,
+no core gain). F copied to `C:\Users\roach\Downloads\IMG_6556_shadowfix_best.ply` (717 MB, byte-identical to
+`exports/IMG_6556_shadowfix_v4_f/splat_shadowfix.ply`) for checking in Blender.
+
+**Correction to round 4:** the round-1 g5.5 sunlit change of +15-19% is real (panels are 960 px wide in every
+layout, so masks lined up). The earlier +7-10% was round 1's auto gain 4.0, not g5.5. The round-4 table's "approx."
+note is wrong.
+
+Hypothesis for the darker core: core splats are capped at the lit median, but unflagged lower layers and splats
+outside the 3 cm band still show through. Added `--ceiling-pct` (default 50 = median, unchanged) to set the
+target-mode ceiling to a higher percentile of lit ground luminance. Next: ceiling p75, and `--ground-tol 0.045`
+with the dark gate.

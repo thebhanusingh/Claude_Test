@@ -209,6 +209,8 @@ def main():
     ap.add_argument("--mode", choices=["target", "scale"], default="target",
                     help="target: a splat is never brightened past the lit ground median luminance, so partly shadowed "
                          "and edge splats get less gain; scale: plain multiply by the gain")
+    ap.add_argument("--ceiling-pct", type=float, default=50.0,
+                    help="target mode: ceiling = this percentile of lit ground luminance (50 = median)")
     ap.add_argument("--band", type=int, default=6, help="edge band width in pixels for the gain estimate")
     ap.add_argument("--band-gap", type=int, default=8, help="pixels skipped either side of the mask edge (penumbra)")
     ap.add_argument("--ground-only", action="store_true",
@@ -292,7 +294,7 @@ def main():
     np.save(args.out / "shadow_frac.npy", frac.astype(np.float32))
 
     ground = None
-    lit_ref = None
+    lit_ref = ceiling = None
     if args.ground_only:
         centres = np.array([-qvec2rotmat(f["q"]).T @ f["t"] for f in frames])
         spread = float(np.median(np.linalg.norm(centres - centres.mean(0), axis=1)))
@@ -309,6 +311,7 @@ def main():
         sh_ref = None
         if lit_sel.sum() > 100 and sh_sel.sum() > 100:
             lit_ref, sh_ref = np.median(lum[lit_sel]), np.median(lum[sh_sel])
+            ceiling = float(np.percentile(lum[lit_sel], args.ceiling_pct))
             print(f"ground luminance: lit median {lit_ref:.4f}, shadow median {sh_ref:.4f} (ratio {lit_ref / sh_ref:.2f})")
         if lit_ref is not None and np.log(lit_ref / sh_ref) > 0.05:
             d = np.clip(np.log(lit_ref / lum) / np.log(lit_ref / sh_ref), 0, 1)
@@ -364,13 +367,13 @@ def main():
     g_lum = float(gain @ lum_w)
     per_splat = np.full(n, g_lum)
     if args.mode == "target":
-        if lit_ref is None:
+        if ceiling is None:
             sel = valid & (frac < 0.1)
-            lit_ref = float(np.median(lin0[sel] @ lum_w)) if sel.sum() > 100 else None
-        if lit_ref is not None:
-            # cap each splat's gain so its luminance doesn't pass the lit median
-            per_splat = np.clip(lit_ref / np.maximum(lin0 @ lum_w, 1e-4), 1.0, g_lum)
-            print(f"target mode: ceiling = lit median luminance {lit_ref:.4f}; "
+            ceiling = float(np.percentile(lin0[sel] @ lum_w, args.ceiling_pct)) if sel.sum() > 100 else None
+        if ceiling is not None:
+            # cap each splat's gain so its luminance doesn't pass the lit ceiling
+            per_splat = np.clip(ceiling / np.maximum(lin0 @ lum_w, 1e-4), 1.0, g_lum)
+            print(f"target mode: ceiling = lit luminance p{args.ceiling_pct:g} {ceiling:.4f}; "
                   f"mean per-splat gain on touched splats {per_splat[weight > 0].mean():.2f}")
         else:
             print("WARNING: no lit reference for target mode; falling back to scale")
@@ -405,7 +408,8 @@ def main():
         ply=str(args.ply), colmap=str(args.colmap), masks=str(args.masks), frames_used=used,
         gaussians=int(n), seen_min_views=int(valid.sum()), brightened_any=int((weight > 0).sum()),
         brightened_full=int((weight >= 1).sum()), changed_gaussians=int(touched.sum()), gain_linear_rgb=gain.round(4).tolist(), gain_raw_rgb=gain_raw.round(4).tolist(), gain_luminance=round(g_lum, 4),
-        lit_ref_luminance=None if lit_ref is None else round(float(lit_ref), 4), gain_source=gain_src,
+        lit_ref_luminance=None if lit_ref is None else round(float(lit_ref), 4),
+        ceiling_luminance=None if ceiling is None else round(float(ceiling), 4), gain_source=gain_src,
         gain_frames=len(ratios), ground_plane=ground, params={k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
         seconds=round(time.time() - t0, 1))
     (args.out / "stats.json").write_text(json.dumps(stats, indent=2))
