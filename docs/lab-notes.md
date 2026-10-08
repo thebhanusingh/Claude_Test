@@ -598,3 +598,15 @@ the 30 PLYs of the 15 superseded shadow-fix runs (stats.json, shadow_frac.npy an
 `conda clean -a` and `pip cache purge`. They then compacted the vhdx with diskpart. **Result: 76 GB free on C:.**
 Lesson: each shadow-fix test run writes ~1.4 GB (fixed + debug PLY); delete superseded runs' PLYs as you go, and remember
 WSL disk space only returns to Windows after compaction.
+
+## New scene IMG_6615 (planned 2026-10-08)
+
+Source: `Downloads\IMG_6615.MOV`: 3840x2160, 30 fps, 177.8 s (5,334 frames), H.264 10.3 Mb/s, yuv420p, bt709 (SDR), 224 MB.
+Indoor office or storage room (white table and chairs, dark cabinets, shelves, grey carpet, jacket rack, corkboard, large white walls and
+ceiling, fluorescent light). Hand-held walk-around with several tilts to the ceiling; some motion blur. Risk: blank white
+surfaces may leave ceiling frames unposed. Laptop state: 8 GB VRAM free, 15 GB WSL RAM (14 available) + 4 GB swap, 811 GB
+free in WSL, 75 GB free on C:. nerfstudio 1.1.5, gsplat 1.4.0.
+Settings sheet with every tunable and three presets (HQ laptop / Safe / Max detail): project file
+`new-splat/IMG_6615-settings.md`. Constraints applied: 650 frames at 1080p (RAM), splatfacto-big `stop-split-at` <= 7000 (VRAM,
+IMG_6557 crash), exhaustive matching (better result at school), antialiased + scale regularization for blank walls. Waiting
+on the user's preset choice.
