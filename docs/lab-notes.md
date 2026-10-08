@@ -583,3 +583,9 @@ as the final shadow-fixed splat for IMG_6556. O stays in exports for the thesis 
 `fix_splat_shadows.py --ply exports/IMG_6556/splat.ply --colmap data/IMG_6556/colmap/sparse/0_refined
 --masks data/IMG_6556/shadow_masks --images data/IMG_6556/images --every 2 --ground-only --dark-gate --lo 0.15 --hi 0.45
 --ground-spread 0.06 --ground-tol 0.03 --max-gain 12` (script `b0c0bf8`; defaults `--colour lum --mode target`).
+
+**Update (2026-10-08 22:03 UTC):** after more viewing, the user said **O does a better job on the ground shadows**, so O
+becomes the preferred version (Downloads swap queued on the laptop, which was offline). User feedback also raised two
+open issues: (1) the splat looks incomplete in the phone viewer, which shows only 300k of 2.89M splats; to check whether
+the gaps are also in the full PLY; (2) the shadow on the chair stays, which is expected because `--ground-only` excludes
+everything off the ground plane; to find out whether it is self-shading or a cast shadow before designing an object pass.
