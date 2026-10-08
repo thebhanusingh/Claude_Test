@@ -203,7 +203,12 @@ def main():
     ap.add_argument("--lo", type=float, default=0.3, help="shadow_frac where brightening starts")
     ap.add_argument("--hi", type=float, default=0.7, help="shadow_frac where brightening is full")
     ap.add_argument("--gain", type=float, nargs="+", help="override gain: one value or three (R G B), linear light")
-    ap.add_argument("--max-gain", type=float, default=12.0)
+    ap.add_argument("--max-gain", type=float, default=6.0)
+    ap.add_argument("--colour", choices=["lum", "rgb"], default="lum",
+                    help="lum: one gain for R, G and B (keeps each splat's hue); rgb: per-channel gains from the photos")
+    ap.add_argument("--mode", choices=["target", "scale"], default="target",
+                    help="target: a splat is never brightened past the lit ground median luminance, so partly shadowed "
+                         "and edge splats get less gain; scale: plain multiply by the gain")
     ap.add_argument("--band", type=int, default=6, help="edge band width in pixels for the gain estimate")
     ap.add_argument("--band-gap", type=int, default=8, help="pixels skipped either side of the mask edge (penumbra)")
     ap.add_argument("--ground-only", action="store_true",
@@ -287,6 +292,7 @@ def main():
     np.save(args.out / "shadow_frac.npy", frac.astype(np.float32))
 
     ground = None
+    lit_ref = None
     if args.ground_only:
         centres = np.array([-qvec2rotmat(f["q"]).T @ f["t"] for f in frames])
         spread = float(np.median(np.linalg.norm(centres - centres.mean(0), axis=1)))
@@ -300,7 +306,7 @@ def main():
         lum = np.maximum(lum, 1e-4)
         lit_sel, sh_sel = near & valid & (frac < 0.1), near & valid & (frac >= args.hi)
         dark = np.ones(n)
-        lit_ref = sh_ref = None
+        sh_ref = None
         if lit_sel.sum() > 100 and sh_sel.sum() > 100:
             lit_ref, sh_ref = np.median(lum[lit_sel]), np.median(lum[sh_sel])
             print(f"ground luminance: lit median {lit_ref:.4f}, shadow median {sh_ref:.4f} (ratio {lit_ref / sh_ref:.2f})")
@@ -353,8 +359,28 @@ def main():
     # only rewrite Gaussians that get brightened; everything else is copied bit-for-bit
     dc = np.stack([ply[f"f_dc_{c}"] for c in range(3)], 1).astype(np.float64)
     rgb = np.clip(dc * SH_C0 + 0.5, 0, 1)
-    lin = srgb_to_linear(rgb) * (1 + weight[:, None] * (gain - 1))
-    new_rgb = np.clip(linear_to_srgb(np.clip(lin, 0, 1)), 0, 1)
+    lin0 = srgb_to_linear(rgb)
+    lum_w = np.array([0.2126, 0.7152, 0.0722])
+    g_lum = float(gain @ lum_w)
+    per_splat = np.full(n, g_lum)
+    if args.mode == "target":
+        if lit_ref is None:
+            sel = valid & (frac < 0.1)
+            lit_ref = float(np.median(lin0[sel] @ lum_w)) if sel.sum() > 100 else None
+        if lit_ref is not None:
+            # cap each splat's gain so its luminance doesn't pass the lit median
+            per_splat = np.clip(lit_ref / np.maximum(lin0 @ lum_w, 1e-4), 1.0, g_lum)
+            print(f"target mode: ceiling = lit median luminance {lit_ref:.4f}; "
+                  f"mean per-splat gain on touched splats {per_splat[weight > 0].mean():.2f}")
+        else:
+            print("WARNING: no lit reference for target mode; falling back to scale")
+    if args.colour == "lum":
+        ch_gain = per_splat[:, None] * np.ones(3)
+    else:
+        ch_gain = gain[None, :] * (per_splat / g_lum)[:, None]
+    lin = lin0 * (1 + weight[:, None] * (ch_gain - 1))
+    lin = lin / np.maximum(lin.max(1, keepdims=True), 1.0)  # clip without shifting hue
+    new_rgb = np.clip(linear_to_srgb(lin), 0, 1)
     touched = weight > 0
     factor = np.where(touched[:, None] & (rgb > 1e-3), new_rgb / np.maximum(rgb, 1e-3), 1.0)
     fixed = ply.copy()
@@ -378,7 +404,8 @@ def main():
     stats = dict(
         ply=str(args.ply), colmap=str(args.colmap), masks=str(args.masks), frames_used=used,
         gaussians=int(n), seen_min_views=int(valid.sum()), brightened_any=int((weight > 0).sum()),
-        brightened_full=int((weight >= 1).sum()), changed_gaussians=int(touched.sum()), gain_linear_rgb=gain.round(4).tolist(), gain_raw_rgb=gain_raw.round(4).tolist(), gain_source=gain_src,
+        brightened_full=int((weight >= 1).sum()), changed_gaussians=int(touched.sum()), gain_linear_rgb=gain.round(4).tolist(), gain_raw_rgb=gain_raw.round(4).tolist(), gain_luminance=round(g_lum, 4),
+        lit_ref_luminance=None if lit_ref is None else round(float(lit_ref), 4), gain_source=gain_src,
         gain_frames=len(ratios), ground_plane=ground, params={k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
         seconds=round(time.time() - t0, 1))
     (args.out / "stats.json").write_text(json.dumps(stats, indent=2))

@@ -421,3 +421,33 @@ Problems found and fixes (round 2):
 Synthetic check (cloud): ground lit 0.6 / shadow 0.28 sRGB (linear ratio 5) plus a copy layer 0.03 below. With
 spread 0.3, lit top and lower-layer Gaussians changed 4 and 3 -> 0 with the gate; shadowed top and lower
 layers 672 each, mean 0.28 -> 0.46.
+
+**Laptop round 3 on IMG_6556 (2026-10-08).** Script `eff7310`; `--every 2 --ground-only --dark-gate --lo 0.15
+--hi 0.45`, auto gain. Ground luminance: lit median 0.6858, shadow median 0.0583 (ratio 11.76). Dark gate
+172,695 -> 152,080 splats. Gain before clipping 11.291 / 11.584 / 6.829 (cap 12, so unclipped).
+Renders `exports/IMG_6556_shadowfix_v3_compare/` and close-up `crop_00321_before_C.jpg`.
+
+| Run | Spread | Brightened after spread | Full weight | Shadow/lit ratio (321/481/161) | Nearby sunlit change | Time |
+|---|---|---|---|---|---|---|
+| v3 C (`exports/IMG_6556_shadowfix_v3_c/`) | 0.06 | 232,261 | 89,800 | 0.87 / 0.80 / 0.95 | +28 / +23 / +22% | 156 s |
+| v3 D (`exports/IMG_6556_shadowfix_v3_d/`) | 0.15 | 301,759 | 89,832 | 0.87 / 0.80 / 0.95 | +28 / +23 / +22% | 160 s |
+
+Result: best ratios so far, but **visually wrong**. Former shadows turn neon yellow-green and over-saturated,
+brighter at their edges, and the chair-leg bottoms go pale. Spread 0.15 gives the same numbers as 0.06. Round 1 at
+gain 5.5 still looks the most natural.
+
+Problems found and fixes (round 3):
+7. **Yellow-green cast.** Per-channel gains were unequal (R/G ~11.4, B 6.8): skylight is bluish, so the photo
+   ratio is lower in blue. Multiplying per channel and then clipping each channel at 1 also shifts hue. Fix:
+   `--colour lum` (new default) uses one luminance gain for R, G and B. Overflow is handled by dividing all three
+   channels by the largest, so hue is kept. `--colour rgb` keeps the old behaviour.
+8. **Overshoot and bright edges.** The ~11x ratio holds for the darkest splats, but a rendered pixel blends several
+   splats. Partly shadowed and edge splats are already brighter, so multiplying them by 11 overshoots. The photo
+   ratio before the fix (0.44 sRGB, about 0.16 linear) points to about 6x for the blended pixel. Fix:
+   `--mode target` (new default) caps each splat's gain at lit_median / own luminance (never below 1 or above
+   the gain), so no splat is pushed past the lit ground median. `--max-gain` default back to 6. `--mode scale`
+   keeps plain multiplication.
+9. **Pale chair-leg bottoms.** Leg splats within the 7 cm ground band (`tol` 0.0712) were treated as ground.
+   Next run uses `--ground-tol 0.03`.
+Synthetic check (cloud, true linear ratio 5, auto estimate 6.75): scale/rgb at cap 12 pushed shadowed splats to
+max 0.687 sRGB, past the lit 0.600. Target/lum: max 0.600, mean per-splat gain 4.99, lit splats unchanged.
