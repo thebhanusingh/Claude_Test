@@ -164,16 +164,21 @@ def fit_ground_plane(xyz, opacity, frames, tol, iters=2000, seed=0):
     # refine with least squares on the inliers
     inl = pts[np.abs(pts @ best_n + best_d) < tol]
     centroid = inl.mean(0)
-    n = np.linalg.svd(inl - centroid)[2][-1]
+    n = np.linalg.svd(inl - centroid, full_matrices=False)[2][-1]
     n = n if n @ up > 0 else -n
     return n, -n @ centroid, len(inl) / len(pts), float(n @ up)
 
 
-def edge_band_ratio(img, mask, band):
-    """Median lit/shadow ratio (linear RGB) in thin bands on either side of the mask edge."""
-    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * band + 1, 2 * band + 1))
-    inner = mask & ~cv2.erode(mask.astype(np.uint8), k).astype(bool)
-    outer = cv2.dilate(mask.astype(np.uint8), k).astype(bool) & ~mask
+def edge_band_ratio(img, mask, band, gap):
+    """Median lit/shadow ratio (linear RGB) in thin bands either side of the mask edge, skipping
+    `gap` pixels next to the edge so soft penumbra doesn't pull the ratio down."""
+    def disk(r):
+        return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1))
+    m8 = mask.astype(np.uint8)
+    inner = cv2.erode(m8, disk(gap)).astype(bool) & ~cv2.erode(m8, disk(gap + band)).astype(bool) if gap else \
+        mask & ~cv2.erode(m8, disk(band)).astype(bool)
+    outer = cv2.dilate(m8, disk(gap + band)).astype(bool) & ~cv2.dilate(m8, disk(gap)).astype(bool) if gap else \
+        cv2.dilate(m8, disk(band)).astype(bool) & ~mask
     if inner.sum() < 200 or outer.sum() < 200:
         return None
     lin = srgb_to_linear(img.astype(np.float64) / 255.0)
@@ -200,10 +205,15 @@ def main():
     ap.add_argument("--gain", type=float, nargs="+", help="override gain: one value or three (R G B), linear light")
     ap.add_argument("--max-gain", type=float, default=6.0)
     ap.add_argument("--band", type=int, default=6, help="edge band width in pixels for the gain estimate")
+    ap.add_argument("--band-gap", type=int, default=8, help="pixels skipped either side of the mask edge (penumbra)")
     ap.add_argument("--ground-only", action="store_true",
                     help="only brighten Gaussians near the dominant ground plane (skips self-shading on objects, dark foliage, walls)")
     ap.add_argument("--ground-tol", type=float,
                     help="max distance from the ground plane, scene units (default: 2%% of the camera spread)")
+    ap.add_argument("--ground-spread", type=float, default=0.0,
+                    help="with --ground-only: give each ground Gaussian the max shadow weight of ground neighbours within "
+                         "this radius in the plane (scene units), so lower grass layers hidden from the z-buffer follow "
+                         "the visible top layer. 0 = off")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -259,7 +269,7 @@ def main():
         if img_path.exists():
             img = cv2.cvtColor(cv2.imread(str(img_path)), cv2.COLOR_BGR2RGB)
             if img.shape[:2] == (h, w):
-                r = edge_band_ratio(img, mask, args.band)
+                r = edge_band_ratio(img, mask, args.band, args.band_gap)
                 if r is not None:
                     ratios.append(r)
         if i % 25 == 0:
@@ -281,6 +291,24 @@ def main():
         n_g, d_g, inlier_share, align = fit_ground_plane(xyz, opacity, frames, tol)
         near = np.abs(xyz @ n_g + d_g) < tol
         weight *= near
+        if args.ground_spread > 0:
+            from scipy.spatial import cKDTree
+            gi = np.nonzero(near)[0]
+            # 2D coordinates in the plane
+            a = np.cross(n_g, [1.0, 0, 0] if abs(n_g[0]) < 0.9 else [0, 1.0, 0])
+            a /= np.linalg.norm(a)
+            b = np.cross(n_g, a)
+            p2 = np.stack([xyz[gi] @ a, xyz[gi] @ b], 1)
+            src = weight[gi] > 0
+            if src.any():
+                tree = cKDTree(p2[src])
+                dist, j = tree.query(p2, k=1, distance_upper_bound=args.ground_spread)
+                hit = np.isfinite(dist)
+                spread_w = np.zeros(len(gi))
+                spread_w[hit] = weight[gi][src][j[hit]]
+                before = int((weight > 0).sum())
+                weight[gi] = np.maximum(weight[gi], spread_w)
+                print(f"ground spread r={args.ground_spread}: brightened {before:,} -> {int((weight > 0).sum()):,}")
         ground = dict(normal=n_g.round(4).tolist(), offset=round(float(d_g), 4), tol=round(tol, 4),
                       camera_spread=round(spread, 4), inlier_share=round(inlier_share, 3),
                       up_alignment=round(align, 3), gaussians_near=int(near.sum()))
@@ -299,14 +327,16 @@ def main():
     print(f"gain (linear RGB) = {np.round(gain, 3).tolist()} [{gain_src}]")
 
     # recolour: scale DC colour in linear light, scale view-dependent SH by the same per-channel factor
+    # only rewrite Gaussians that get brightened; everything else is copied bit-for-bit
     dc = np.stack([ply[f"f_dc_{c}"] for c in range(3)], 1).astype(np.float64)
     rgb = np.clip(dc * SH_C0 + 0.5, 0, 1)
     lin = srgb_to_linear(rgb) * (1 + weight[:, None] * (gain - 1))
     new_rgb = np.clip(linear_to_srgb(np.clip(lin, 0, 1)), 0, 1)
-    factor = np.where(rgb > 1e-3, new_rgb / np.maximum(rgb, 1e-3), 1.0)
+    touched = weight > 0
+    factor = np.where(touched[:, None] & (rgb > 1e-3), new_rgb / np.maximum(rgb, 1e-3), 1.0)
     fixed = ply.copy()
     for c in range(3):
-        fixed[f"f_dc_{c}"] = ((new_rgb[:, c] - 0.5) / SH_C0).astype(np.float32)
+        fixed[f"f_dc_{c}"] = np.where(touched, (new_rgb[:, c] - 0.5) / SH_C0, ply[f"f_dc_{c}"]).astype(np.float32)
     rest = sorted((k for k in names if k.startswith("f_rest_")), key=lambda k: int(k.split("_")[-1]))
     per_ch = len(rest) // 3  # f_rest is channel-major: all R coeffs, then G, then B
     for j, k in enumerate(rest):
@@ -317,7 +347,7 @@ def main():
     red = np.array([1.0, 0.0, 0.0])
     dbg_rgb = rgb * (1 - weight[:, None]) + red * weight[:, None]
     for c in range(3):
-        debug[f"f_dc_{c}"] = ((dbg_rgb[:, c] - 0.5) / SH_C0).astype(np.float32)
+        debug[f"f_dc_{c}"] = np.where(touched, (dbg_rgb[:, c] - 0.5) / SH_C0, ply[f"f_dc_{c}"]).astype(np.float32)
     for k in rest:
         debug[k] = (ply[k] * (1 - weight)).astype(np.float32)
     write_ply(args.out / "splat_shadowmask_debug.ply", header, debug)
@@ -325,7 +355,7 @@ def main():
     stats = dict(
         ply=str(args.ply), colmap=str(args.colmap), masks=str(args.masks), frames_used=used,
         gaussians=int(n), seen_min_views=int(valid.sum()), brightened_any=int((weight > 0).sum()),
-        brightened_full=int((weight >= 1).sum()), gain_linear_rgb=gain.round(4).tolist(), gain_source=gain_src,
+        brightened_full=int((weight >= 1).sum()), changed_gaussians=int(touched.sum()), gain_linear_rgb=gain.round(4).tolist(), gain_source=gain_src,
         gain_frames=len(ratios), ground_plane=ground, params={k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
         seconds=round(time.time() - t0, 1))
     (args.out / "stats.json").write_text(json.dumps(stats, indent=2))

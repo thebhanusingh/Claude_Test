@@ -367,3 +367,31 @@ plane through opaque Gaussians, constrained to within ~37° of the average camer
 refined; only Gaussians within `--ground-tol` (default 2% of the camera spread) are brightened. Synthetic check:
 ground plane at y = 1 plus an occluding masked object: plane found (up alignment 1.000), 151 visible masked ground
 Gaussians brightened, 0 of 800 object Gaussians touched.
+
+**Laptop run 1 on IMG_6556 (2026-10-08).** All 650 frames masked with SDDNet in ~60 s (mean shadow fraction
+22.5%). Fix run on `exports/IMG_6556/splat.ply` with `data/IMG_6556/colmap/sparse/0_refined`, `--every 2
+--ground-only`, ~149 s per run.
+
+| Run | Settings | Ground plane | Brightened | Gain (R/G/B) | Shadow/lit ratio on 3 test frames |
+|---|---|---|---|---|---|
+| before | - | - | - | - | 0.44 / 0.38 / 0.48 |
+| run 1 (`exports/IMG_6556_shadowfix/`) | auto gain, lo 0.3, hi 0.7 | normal (-0.014, -0.950, -0.312), up alignment 0.998, tol 0.0712, 1,352,189 Gaussians near plane | 141,825 | 4.00 / 4.31 / 3.09 (auto) | 0.71 / 0.63 / 0.77 |
+| run 2 (`exports/IMG_6556_shadowfix_g55/`) | gain 5.5, lo 0.2, hi 0.6 | same | - | 5.5 fixed | 0.77 / 0.68 / 0.84 |
+
+Result: cast shadows on the grass clearly lighter but not gone (a perfect fix would give ratios near 1.0).
+
+Problems found and fixes (shadow fix):
+1. **Ground-plane SVD ran out of memory (131 GiB request).** `np.linalg.svd` on ~1.3M inlier points built the full
+   U matrix. Fix: `full_matrices=False`.
+2. **~400k untouched splats changed.** The whole f_dc array went through linear->sRGB with clipping, which altered
+   out-of-range DC values on Gaussians with weight 0. Fix: rewrite f_dc only where weight > 0; untouched rows are
+   now bit-identical (synthetic check).
+3. **Auto gain too low (~4 vs ~5.4 measured from the images).** The edge bands sampled penumbra pixels right next
+   to the mask edge. Fix: `--band-gap` (default 8 px) skips pixels next to the edge before sampling the lit and
+   shadow bands.
+4. **Lower grass layers stayed dark.** Gaussians under the top grass layer fail the z-buffer visibility test, so
+   they never collect shadow votes. Fix: `--ground-spread R`: each ground Gaussian takes the highest weight of any
+   brightened ground neighbour within R (plane 2D coordinates, cKDTree). Synthetic check with R = 0.1: brightened
+   ground Gaussians 151 -> 301, object Gaussians touched 0 of 800.
+Next: rerun on the laptop with `--ground-only --ground-spread` and the new auto gain, then re-measure the same
+3 frames.
