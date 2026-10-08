@@ -532,3 +532,25 @@ Next: J + colour gate.
 
 Figures: pushing the comparison JPEGs to this branch from the laptop was blocked by auto mode ("Out-of-Place
 Publication"). Waiting on the user's OK.
+
+**Laptop round 7 on IMG_6556 (2026-10-08).** Script `1374f1d`. Base = v6 J flags (`--ground-tol 0.045`, ceiling p50
+0.6905). Shadowed-ground reference chromaticity (r, g) = (0.381, 0.419). Renders `exports/IMG_6556_shadowfix_v7_compare/`,
+close-ups `crop_00321_before_F_J_L_M.jpg`, `legs_00321_before_F_J_L_M.jpg`.
+
+| Run | Colour gate | Dark gate -> colour gate -> spread | Full | Mean gain | Whole shadow | Edge band | Core | Nearby sunlit | Time |
+|---|---|---|---|---|---|---|---|---|---|
+| v4 F | - (tol 0.03) | 64,032 -> - -> 97,317 | 37,051 | 5.89 | 0.79 / 0.76 / 0.72 | 0.86 / 0.94 / 0.80 | 0.77 / 0.64 / 0.70 | +4.6 / +10.5 / +2.6% | 159 s |
+| v6 J | - | 102,829 -> - -> 153,113 | 59,476 | 5.82 | 0.87 / 0.80 / 0.86 | 0.91 / 0.98 / 0.89 | 0.84 / 0.68 / 0.84 | +10.0 / +14.0 / +6.1% | 161 s |
+| v7 L (`..._v7_l/`) | 0.04 | 102,829 -> 34,585 -> 49,246 | 13,505 | 3.70 | 0.64 / 0.58 / 0.65 | 0.78 / 0.82 / 0.76 | 0.61 / 0.50 / 0.60 | +1.9 / +3.5 / +1.7% | 168 s |
+| v7 M (`..._v7_m/`) | 0.07 | 102,829 -> 58,004 -> 85,167 | 25,631 | 4.08 | 0.76 / 0.70 / 0.76 | 0.84 / 0.89 / 0.82 | 0.74 / 0.60 / 0.74 | +4.8 / +7.3 / +3.6% | 169 s |
+
+Saturation (shadow/sunlit): L 0.36/0.32, 0.49/0.45, 0.34/0.29; M 0.34/0.32, 0.46/0.44, 0.33/0.29 (M slightly below the photo).
+
+Result: **the colour gate fixes J's pale chair legs (L and M dark like F) but drops too much grass.** In-shadow grass
+spans a wide colour range (lower layers are more yellow-green or brown), so a gate centred on the mean shadowed-ground
+colour rejects much of it: at 0.07, 58k of 103k splats are kept. Ranking: F > M (≈ F on frame 161) > J (best core,
+pale legs) > L. Downloads keeps F.
+
+Also on 2026-10-08: a phone 3D viewer artifact of F vs the original (300k most visible splats per version, DC
+colour only) was published for the user: https://claude.ai/artifact/8m58aabfViQxQfer36aVxb (private).
+Next: wider gates (0.10, 0.13).
