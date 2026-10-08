@@ -554,3 +554,25 @@ pale legs) > L. Downloads keeps F.
 Also on 2026-10-08: a phone 3D viewer artifact of F vs the original (300k most visible splats per version, DC
 colour only) was published for the user: https://claude.ai/artifact/8m58aabfViQxQfer36aVxb (private).
 Next: wider gates (0.10, 0.13).
+
+**Laptop round 8 on IMG_6556 (2026-10-08).** Script `1374f1d`, v6 J flags plus wider colour gates. Renders
+`exports/IMG_6556_shadowfix_v8_compare/`.
+
+| Run | Colour gate | Dark gate -> colour gate -> spread | Full | Mean gain | Whole shadow | Edge band | Core | Nearby sunlit | Time |
+|---|---|---|---|---|---|---|---|---|---|
+| v4 F | - (tol 0.03) | 64,032 -> - -> 97,317 | 37,051 | 5.89 | 0.79 / 0.76 / 0.72 | 0.86 / 0.94 / 0.80 | 0.77 / 0.64 / 0.70 | +4.6 / +10.5 / +2.6% | 159 s |
+| v8 N (`..._v8_n/`) | 0.10 | 102,829 -> 69,791 -> 106,254 | 32,662 | 4.33 | 0.81 / 0.74 / 0.81 | 0.88 / 0.93 / 0.85 | 0.78 / 0.63 / 0.79 | +6.7 / +9.3 / +4.6% | 169 s |
+| v8 O (`..._v8_o/`) | 0.13 | 102,829 -> 75,281 -> 116,823 | 36,088 | 4.53 | 0.82 / 0.76 / 0.82 | 0.89 / 0.94 / 0.86 | 0.79 / 0.64 / 0.79 | +7.8 / +10.3 / +5.2% | 170 s |
+
+Saturation (shadow/sunlit) N and O: 0.34/0.32, 0.46/0.44, 0.32/0.29 (about 0.05 below F in the shadows). Chair-leg
+bases dark in N and O (like F).
+
+Result: **O is a modest improvement on F with no leg problem.** Core: frame 161 0.70 -> 0.79, frame 321 0.77 -> 0.79,
+frame 481 tie at 0.64. Costs: 1-3 points more brightening of nearby sunlit grass and slightly greyer shadow areas. N is a
+weaker O. Choice between F and O handed to the user (visual call).
+
+**Where the method stands after 8 rounds.** The best versions lift the cast shadows from 0.38-0.48 to about
+0.76-0.82 of the sunlit grass, without colour artefacts, at about 2.5-3 min per run plus 1 min of SDDNet masking
+(650 frames). The remaining gap is in the shadow cores. Likely causes: splats outside the band and lower layers not
+reached by votes, and the flattened texture of shadowed surfaces. A per-splat correction can't recover detail the
+capture never recorded in sunlight.
