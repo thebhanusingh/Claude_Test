@@ -321,3 +321,19 @@ Next candidates (not run): (1) stage 2 with a larger `env_tv`/sharper env map so
 unlikely to be enough; (2) a method with explicit ray-traced visibility or a directional sun + visibility
 term (R3DG; outdoor sun/sky models such as LumiGauss); (3) masking/inpainting shadows in the training
 images before reconstruction (adds pipeline time).
+
+### Sun + sky methods: survey (2026-10-08)
+
+The user picked a sun + sky model as the next approach after GS-IR. Checked the candidates' inputs and code:
+
+| Method | Inputs | Sun shadow model | Cost reported | Code |
+|---|---|---|---|---|
+| LumiGauss (WACV 2025) | Photo collections, **varying lighting**; per-image lighting latent | Per-Gaussian SH radiance transfer (0 = shadowed, 1 = lit), env light as SH; shadowed model trained as a second stage | ~1 h 20 min (A100) | github.com/joaxkal/lumigauss |
+| ROSGS (2025, arXiv 2509.11275) | Multi-view, **unconstrained/varying lighting**, per-image embeddings | Sun = one spherical Gaussian; BVH ray-traced visibility against a 2DGS mesh; sky via PRT | ~2.9 h (RTX 3090 24 GB) | Not released |
+| OSDR-GS (IJCAI 2025) | **Multiple lighting conditions**, clustered into lighting groups | Per-Gaussian SH sun visibility, pushed toward binary | ~30 min (RTX 4090) | Not released |
+| GaRe (ICCV 2025) | Unconstrained photo collections | Outdoor relighting | - | - |
+
+**Key finding:** every sun + sky method found relies on the **same scene seen under different sun positions**
+to tell shadow from albedo. IMG_6556 is one video under one lighting condition, so shadow vs dark
+material is ambiguous for all of them (the same reason GS-IR failed). Only LumiGauss has public code; on a
+single-lighting capture it would get no lighting variation to learn from (inferred from the method, not tested).
