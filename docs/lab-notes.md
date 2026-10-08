@@ -337,3 +337,21 @@ The user picked a sun + sky model as the next approach after GS-IR. Checked the 
 to tell shadow from albedo. IMG_6556 is one video under one lighting condition, so shadow vs dark
 material is ambiguous for all of them (the same reason GS-IR failed). Only LumiGauss has public code; on a
 single-lighting capture it would get no lighting variation to learn from (inferred from the method, not tested).
+
+### 3D shadow-mask fix (started 2026-10-08)
+
+The user parked LumiGauss and picked a detect-and-correct approach that works on existing splats with no
+retraining: `scripts/fix_splat_shadows.py`.
+
+How it works: (1) per-frame 2D shadow masks from an off-the-shelf shadow detector; (2) every Gaussian centre is
+projected into each masked frame (COLMAP intrinsics incl. OPENCV distortion), visibility is checked against a
+coarse z-buffer of opaque Gaussians (default 1/4 res, 3% depth tolerance, opacity > 0.5), and shadow votes /
+visible votes gives `shadow_frac`; (3) Gaussians seen in >= 5 frames get brightened with a weight ramping from
+`shadow_frac` 0.3 to 0.7; (4) the gain is the median lit/shadow ratio (linear RGB) in thin bands either side of the
+mask edges across frames (clipped to 1-6), which approximates sun/sky for the same surface. f_dc is scaled in
+linear light; f_rest gets the same per-channel factor. A debug PLY paints the corrected splats red.
+
+Synthetic check (cloud, 2026-10-08): plane of 1,800 Gaussians, left half dark (0.2) and masked in 6 frames:
+900 marked, 870 at full weight, lit half unchanged (0.6), shadow half 0.2 -> 0.48 because the measured ratio (9.5)
+hit the 6.0 gain cap. **Known limits:** shadowed surfaces keep their flatter look (no texture recovery), and
+results depend on mask quality and on the splat being in COLMAP coordinates.
