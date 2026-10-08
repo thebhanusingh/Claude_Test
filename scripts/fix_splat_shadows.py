@@ -209,6 +209,9 @@ def main():
     ap.add_argument("--mode", choices=["target", "scale"], default="target",
                     help="target: a splat is never brightened past the lit ground median luminance, so partly shadowed "
                          "and edge splats get less gain; scale: plain multiply by the gain")
+    ap.add_argument("--colour-gate", type=float, default=0.0,
+                    help="with --ground-only: only brighten splats whose rg chromaticity is within this distance of the "
+                         "median of the shadowed ground (keeps non-ground objects such as chair legs out). 0 = off")
     ap.add_argument("--ceiling-pct", type=float, default=50.0,
                     help="target mode: ceiling = this percentile of lit ground luminance (50 = median)")
     ap.add_argument("--band", type=int, default=6, help="edge band width in pixels for the gain estimate")
@@ -322,6 +325,16 @@ def main():
             before = int((weight > 0).sum())
             weight *= dark
             print(f"dark gate: brightened {before:,} -> {int((weight > 0).sum()):,}")
+        if args.colour_gate > 0 and sh_sel.sum() > 100:
+            lin_c = srgb_to_linear(np.clip(dc0 * SH_C0 + 0.5, 0, 1))
+            chrom = lin_c[:, :2] / np.maximum(lin_c.sum(1, keepdims=True), 1e-6)
+            ref = np.median(chrom[sh_sel], 0)
+            ok = np.linalg.norm(chrom - ref, axis=1) <= args.colour_gate
+            before = int((weight > 0).sum())
+            weight *= ok
+            dark *= ok  # spread receivers must pass too
+            print(f"colour gate {args.colour_gate} around shadowed-ground chromaticity {ref.round(3).tolist()}: "
+                  f"brightened {before:,} -> {int((weight > 0).sum()):,}")
         if args.ground_spread > 0:
             from scipy.spatial import cKDTree
             gi = np.nonzero(near)[0]

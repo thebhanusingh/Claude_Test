@@ -504,3 +504,31 @@ Hypothesis for the darker core: core splats are capped at the lit median, but un
 outside the 3 cm band still show through. Added `--ceiling-pct` (default 50 = median, unchanged) to set the
 target-mode ceiling to a higher percentile of lit ground luminance. Next: ceiling p75, and `--ground-tol 0.045`
 with the dark gate.
+
+**Laptop round 6 on IMG_6556 (2026-10-08).** Script `40709ca`. Base = v4 F flags (`--every 2 --ground-only
+--dark-gate --lo 0.15 --hi 0.45 --ground-spread 0.06 --max-gain 12`). Renders
+`exports/IMG_6556_shadowfix_v6_compare/` (photo | before | F | I | J | K), close-up `crop_00321_before_F_I_J_K.jpg`.
+
+| Run | Ground tol | Ceiling | Brightened (gate -> spread) | Full | Mean gain | Whole shadow | Edge band | Core | Nearby sunlit | Time |
+|---|---|---|---|---|---|---|---|---|---|---|
+| v4 F | 0.03 | p50 0.6966 | 64,032 -> 97,317 | 37,051 | 5.89 | 0.79 / 0.76 / 0.72 | 0.86 / 0.94 / 0.80 | 0.77 / 0.64 / 0.70 | +4.6 / +10.5 / +2.6% | 159 s |
+| v6 I (`..._v6_i/`) | 0.03 | p75 0.8387 | 64,032 -> 97,317 | 37,051 | 6.26 | 0.80 / 0.77 / 0.72 | 0.87 / 0.95 / 0.81 | 0.77 / 0.65 / 0.70 | +5.1 / +11.0 / +2.9% | 157 s |
+| v6 J (`..._v6_j/`) | 0.045 | p50 0.6905 | 102,829 -> 153,113 | 59,476 | 5.82 | 0.87 / 0.80 / 0.86 | 0.91 / 0.98 / 0.89 | 0.84 / 0.68 / 0.84 | +10.0 / +14.0 / +6.1% | 161 s |
+| v6 K (`..._v6_k/`) | 0.045 | p75 0.8341 | 102,829 -> 153,113 | 59,476 | 6.21 | 0.88 / 0.81 / 0.87 | 0.92 / 0.99 / 0.90 | 0.84 / 0.68 / 0.84 | +10.9 / +14.7 / +6.7% | 162 s |
+
+(Frames 321 / 481 / 161. Tol 0.045: 1,140,669 Gaussians near the plane, up alignment 0.998; dark gate 120,071 -> 102,829.
+Saturation unchanged in all versions; no neon.)
+
+Result: **no clear winner over F; Downloads still holds F.** The ceiling percentile barely matters (I ≈ F, K ≈ J): the
+core is limited by which splats are included, not by the ceiling. Hypothesis from round 5 confirmed in part: a
+wider band (J) lifts the core a lot (frame 161: 0.70 -> 0.84), but the chair-leg bottoms go pale or bleached blue
+again and the nearby sunlit grass brightens more.
+
+Fix for J's legs: added `--colour-gate D`. Each splat's linear rg chromaticity must be within D of the
+median chromaticity of the shadowed ground splats. This is generic: it takes the ground's own colour, not
+"green". Synthetic check: 595 brown (0.30/0.18/0.12) splats inside the shadow region. Without the gate,
+269 were changed; with D 0.05, 0 were changed, and grass-shadow splats changed 1,075 -> 1,067.
+Next: J + colour gate.
+
+Figures: pushing the comparison JPEGs to this branch from the laptop was blocked by auto mode ("Out-of-Place
+Publication"). Waiting on the user's OK.
