@@ -395,3 +395,29 @@ Problems found and fixes (shadow fix):
    ground Gaussians 151 -> 301, object Gaussians touched 0 of 800.
 Next: rerun on the laptop with `--ground-only --ground-spread` and the new auto gain, then re-measure the same
 3 frames.
+
+**Laptop round 2 on IMG_6556 (2026-10-08).** Script at `a490f08`, `--ground-only`, auto gain, same ground plane.
+158 s per run. Renders in `exports/IMG_6556_shadowfix_v2_compare/` (photo | before | s03 | s06).
+
+| Run | Spread | Brightened (before -> after spread) | Full weight | Gain (R/G/B) | Shadow/lit ratio (frames 321/481/161) | Nearby sunlit grass |
+|---|---|---|---|---|---|---|
+| v2 s03 (`exports/IMG_6556_shadowfix_v2_s03/`) | 0.03 | 141,825 -> 190,288 | 80,063 | 6.0 / 6.0 / 6.0 (at the `--max-gain` cap) | 0.77 / 0.67 / 0.84 | +21 / +21 / +16% |
+| v2 s06 (`exports/IMG_6556_shadowfix_v2_s06/`) | 0.06 | 141,825 -> 219,073 | 80,186 | 6.0 / 6.0 / 6.0 (cap) | 0.76 / 0.66 / 0.83 | +23 / +23 / +18% |
+
+Result: **no better than round 1 at gain 5.5** (0.77 / 0.68 / 0.84), and the sunlit grass beside the shadows
+brightened 2-3x more than in round 1 (+7-10%).
+
+Problems found and fixes (round 2):
+5. **The spread brightened sunlit grass.** It copies weight to any ground neighbour within R in the plane, which
+   includes lit grass beside the shadow, not only the layers underneath. Shadow and surroundings both got brighter,
+   so the ratio barely moved. Fix: a darkness gate. Lit and shadowed ground references are the median linear
+   luminance of ground Gaussians with `shadow_frac` < 0.1 and >= `--hi`. Each Gaussian's darkness is its log
+   position between them, reaching full at the geometric midpoint. The spread now only passes weight to dark
+   Gaussians. `--dark-gate` also applies the gate to the vote weights, so `--lo/--hi` can go lower (more shadowed
+   splats at full weight) without touching lit ones. If lit and shadow can't be told apart by brightness, the gate
+   is disabled with a warning.
+6. **Auto gain hit the 6.0 cap on all channels; the true estimate was hidden.** Fix: the script prints and saves
+   (`gain_raw_rgb`) the estimate before clipping; `--max-gain` default raised to 12.
+Synthetic check (cloud): ground lit 0.6 / shadow 0.28 sRGB (linear ratio 5) plus a copy layer 0.03 below. With
+spread 0.3, lit top and lower-layer Gaussians changed 4 and 3 -> 0 with the gate; shadowed top and lower
+layers 672 each, mean 0.28 -> 0.46.
