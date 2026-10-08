@@ -576,3 +576,10 @@ weaker O. Choice between F and O handed to the user (visual call).
 (650 frames). The remaining gap is in the shadow cores. Likely causes: splats outside the band and lower layers not
 reached by votes, and the flattened texture of shadowed surfaces. A per-splat correction can't recover detail the
 capture never recorded in sunlight.
+
+**Decision (2026-10-08 12:56 UTC):** after comparing F, O and the original in the 3D viewer, the user chose to **keep F**
+(`exports/IMG_6556_shadowfix_v4_f/splat_shadowfix.ply`, copy in `C:\Users\roach\Downloads\IMG_6556_shadowfix_best.ply`)
+as the final shadow-fixed splat for IMG_6556. O stays in exports for the thesis comparison. Final F command:
+`fix_splat_shadows.py --ply exports/IMG_6556/splat.ply --colmap data/IMG_6556/colmap/sparse/0_refined
+--masks data/IMG_6556/shadow_masks --images data/IMG_6556/images --every 2 --ground-only --dark-gate --lo 0.15 --hi 0.45
+--ground-spread 0.06 --ground-tol 0.03 --max-gain 12` (script `b0c0bf8`; defaults `--colour lum --mode target`).
