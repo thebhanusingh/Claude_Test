@@ -589,3 +589,12 @@ becomes the preferred version (Downloads swap queued on the laptop, which was of
 open issues: (1) the splat looks incomplete in the phone viewer, which shows only 300k of 2.89M splats; to check whether
 the gaps are also in the full PLY; (2) the shadow on the chair stays, which is expected because `--ground-only` excludes
 everything off the ground plane; to find out whether it is self-shading or a cast shadow before designing an object pass.
+
+**Storage clean-up (2026-10-08).** C: was 99% full (942 GB used, ~11 GB free); the WSL disk `ext4.vhdx` was 176.5 GB.
+Inside WSL, the main users were: outputs_relightable 37.2 GB (Sep), conda pkgs cache 31.1 GB, data 25.7 GB, 17 shadow-fix dirs
+24.0 GB (11.9 GB of it debug PLYs), envs gsplat 17.0 / gsir 11.9 / gaussian_shader 11.8 / sddnet 5.5 / colmap4 4.5 GB,
+pip cache 6.6 GB, outputs_gsir 3.3 GB. User approved the "safe set" and ran it themselves (`~/cleanup_shadowfix.sh`). It deleted
+the 30 PLYs of the 15 superseded shadow-fix runs (stats.json, shadow_frac.npy and images kept; F and O untouched) and ran
+`conda clean -a` and `pip cache purge`. They then compacted the vhdx with diskpart. **Result: 76 GB free on C:.**
+Lesson: each shadow-fix test run writes ~1.4 GB (fixed + debug PLY); delete superseded runs' PLYs as you go, and remember
+WSL disk space only returns to Windows after compaction.
