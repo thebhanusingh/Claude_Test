@@ -355,3 +355,15 @@ Synthetic check (cloud, 2026-10-08): plane of 1,800 Gaussians, left half dark (0
 900 marked, 870 at full weight, lit half unchanged (0.6), shadow half 0.2 -> 0.48 because the measured ratio (9.5)
 hit the 6.0 gain cap. **Known limits:** shadowed surfaces keep their flatter look (no texture recovery), and
 results depend on mask quality and on the splat being in COLMAP coordinates.
+
+**SDDNet masks on IMG_6556 (2026-10-08, laptop).** SDDNet (commit `dddcdd4`, authors' SBU checkpoint `sbu.ckpt`,
+158 MB, EfficientNet-B3 backbone) in its own conda env `sddnet` (Python 3.10, torch 2.4.1+cu124). Wrapper
+`scripts/sddnet_masks.py` (laptop): resize to 512x512, sigmoid, resize back, threshold 0.5; ~0.3 s/frame.
+5-frame check (frames 1, 321, 481): mean shadow fraction 22.6%. **Good:** chair cast shadows on the grass and the
+shaded lawn strip by the shed/fence. **Wrong or out of scope:** self-shaded chair sides and legs (consistent across
+views, so multi-view voting won't remove them), dark foliage (dark, not shadowed), fence/house wall in tree shade.
+**Decision:** restrict the correction to the ground. Added `--ground-only` to `fix_splat_shadows.py`: RANSAC
+plane through opaque Gaussians, constrained to within ~37° of the average camera up vector, then least-squares
+refined; only Gaussians within `--ground-tol` (default 2% of the camera spread) are brightened. Synthetic check:
+ground plane at y = 1 plus an occluding masked object: plane found (up alignment 1.000), 151 visible masked ground
+Gaussians brightened, 0 of 800 object Gaussians touched.

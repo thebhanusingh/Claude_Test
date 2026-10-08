@@ -135,6 +135,40 @@ def linear_to_srgb(c):
 
 # ---------- main ----------
 
+def fit_ground_plane(xyz, opacity, frames, tol, iters=2000, seed=0):
+    """RANSAC plane through opaque Gaussians whose normal is close to the average camera up vector."""
+    rng = np.random.default_rng(seed)
+    # COLMAP cameras look down +z with +y pointing down in the image, so world up = -R^T [0,1,0]
+    ups = np.array([-qvec2rotmat(f["q"])[1] for f in frames])
+    up = ups.mean(0)
+    up /= np.linalg.norm(up)
+    pts = xyz[opacity > 0.5]
+    if len(pts) > 300_000:
+        pts = pts[rng.choice(len(pts), 300_000, replace=False)]
+    best_n, best_d, best_count = None, None, -1
+    for _ in range(iters):
+        a, b, c = pts[rng.choice(len(pts), 3, replace=False)]
+        n = np.cross(b - a, c - a)
+        norm = np.linalg.norm(n)
+        if norm < 1e-12:
+            continue
+        n /= norm
+        if abs(n @ up) < 0.8:
+            continue
+        d = -n @ a
+        count = int((np.abs(pts @ n + d) < tol).sum())
+        if count > best_count:
+            best_n, best_d, best_count = n, d, count
+    if best_n is None:
+        raise SystemExit("ERROR: no ground plane found roughly perpendicular to the camera up direction")
+    # refine with least squares on the inliers
+    inl = pts[np.abs(pts @ best_n + best_d) < tol]
+    centroid = inl.mean(0)
+    n = np.linalg.svd(inl - centroid)[2][-1]
+    n = n if n @ up > 0 else -n
+    return n, -n @ centroid, len(inl) / len(pts), float(n @ up)
+
+
 def edge_band_ratio(img, mask, band):
     """Median lit/shadow ratio (linear RGB) in thin bands on either side of the mask edge."""
     k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * band + 1, 2 * band + 1))
@@ -166,6 +200,10 @@ def main():
     ap.add_argument("--gain", type=float, nargs="+", help="override gain: one value or three (R G B), linear light")
     ap.add_argument("--max-gain", type=float, default=6.0)
     ap.add_argument("--band", type=int, default=6, help="edge band width in pixels for the gain estimate")
+    ap.add_argument("--ground-only", action="store_true",
+                    help="only brighten Gaussians near the dominant ground plane (skips self-shading on objects, dark foliage, walls)")
+    ap.add_argument("--ground-tol", type=float,
+                    help="max distance from the ground plane, scene units (default: 2%% of the camera spread)")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -235,6 +273,20 @@ def main():
     weight = np.clip((frac - args.lo) / max(args.hi - args.lo, 1e-6), 0, 1) * valid
     np.save(args.out / "shadow_frac.npy", frac.astype(np.float32))
 
+    ground = None
+    if args.ground_only:
+        centres = np.array([-qvec2rotmat(f["q"]).T @ f["t"] for f in frames])
+        spread = float(np.median(np.linalg.norm(centres - centres.mean(0), axis=1)))
+        tol = args.ground_tol or 0.02 * spread
+        n_g, d_g, inlier_share, align = fit_ground_plane(xyz, opacity, frames, tol)
+        near = np.abs(xyz @ n_g + d_g) < tol
+        weight *= near
+        ground = dict(normal=n_g.round(4).tolist(), offset=round(float(d_g), 4), tol=round(tol, 4),
+                      camera_spread=round(spread, 4), inlier_share=round(inlier_share, 3),
+                      up_alignment=round(align, 3), gaussians_near=int(near.sum()))
+        print(f"ground plane: normal {ground['normal']}, tol {tol:.4f}, {near.sum():,} Gaussians near it "
+              f"({inlier_share:.0%} of opaque sample), up alignment {align:.3f}")
+
     if args.gain:
         gain = np.array(args.gain * 3 if len(args.gain) == 1 else args.gain, float)
         gain_src = "override"
@@ -274,7 +326,7 @@ def main():
         ply=str(args.ply), colmap=str(args.colmap), masks=str(args.masks), frames_used=used,
         gaussians=int(n), seen_min_views=int(valid.sum()), brightened_any=int((weight > 0).sum()),
         brightened_full=int((weight >= 1).sum()), gain_linear_rgb=gain.round(4).tolist(), gain_source=gain_src,
-        gain_frames=len(ratios), params={k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
+        gain_frames=len(ratios), ground_plane=ground, params={k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
         seconds=round(time.time() - t0, 1))
     (args.out / "stats.json").write_text(json.dumps(stats, indent=2))
     print(json.dumps({k: v for k, v in stats.items() if k != "params"}, indent=2))
