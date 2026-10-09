@@ -654,3 +654,13 @@ error 1.43 px; OPENCV 1920x1080, fx 1564.3, fy 1562.2, cx/cy 960/540 (not refine
 is now almost fully covered. Output `data/IMG_6615_hloc/colmap/sparse/0`, summary `data/IMG_6615_hloc/hloc/summary.json`, log
 `logs/IMG_6615_hloc.log`. **Finding:** on low-texture indoor video, learned features + LightGlue with retrieval pairs solved the
 pose coverage problem that denser frames could not (68% -> 72% with COLMAP vs 98% with hloc).
+
+**IMG_6615 training on hloc poses, attempt 1 (2026-10-08 22:09-22:11 laptop time): stopped for RAM.** Prep: `fix_colmap_model.py`
+read the pycolmap 4.2.1 model with COLMAP 3.10 without problems (137 s incl. bundle adjustment with principal-point refinement);
+transforms.json 981 frames, OPENCV fx 1564.3 fy 1562.2 cx 960.3 cy 539.5 k1 0.139 k2 -0.233. Copied to transforms_nsprocess.json
+so `make_splat_hq.sh` skipped steps 1-3. Flags: STOP_SPLIT=12000, antialiased, scale regularization. At ~step 700 **RAM reached
+14.8 of 15.5 GB** (1 GB available, 0.9 GB swap in use). The watcher killed it at the 14 GB rule. RAM scales roughly linearly with
+cached full-res frames: 720 frames -> 9.0 GB, 981 -> ~15 GB. WSL has no `.wslconfig`, so it gets the default half of 31.7 GB.
+Options: raise WSL memory (`.wslconfig` `memory=24GB` + `wsl --shutdown`, needs the user at the laptop), 1600-px frames, or
+fewer frames. Chose 3 of every 4 frames (~735, keeping frames next to unposed gaps), scene `IMG_6615_hloc735`, same flags.
+**Rule:** on this laptop, full-res 1080p caching allows about 750-800 frames before WSL RAM runs out.
