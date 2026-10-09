@@ -610,3 +610,15 @@ Settings sheet with every tunable and three presets (HQ laptop / Safe / Max deta
 `new-splat/IMG_6615-settings.md`. Constraints applied: 650 frames at 1080p (RAM), splatfacto-big `stop-split-at` <= 7000 (VRAM,
 IMG_6557 crash), exhaustive matching (better result at school), antialiased + scale regularization for blank walls. Waiting
 on the user's preset choice.
+
+**IMG_6615 attempt 1 (2026-10-08 19:58-20:07 laptop time, HQ laptop preset).** `MAX_WIDTH=1920 MATCHING=exhaustive STOP_SPLIT=7000
+EXTRA_TRAIN_ARGS="--pipeline.model.rasterize-mode antialiased --pipeline.model.use-scale-regularization True"
+./scripts/make_splat_hq.sh videos/IMG_6615.MOV IMG_6615 650 30000` (script `c9edb1b`; video copied into WSL first).
+- Frame selection: 1.5 min, sharpness median 89 (all) vs 127 (chosen).
+- COLMAP exhaustive: 6.5 min (much faster than the ~50 min estimate). **Split into two models: model 1 = 442 frames (68%), model 0
+  = 4 frames** (303, 463, 482, 628). nerfstudio's summary reported "poses for 0.62%" because it read the tiny model (known problem 1).
+- `fix_colmap_model.py` refused with "too few frames have camera poses" (exit 1). No training ran. The safety check worked as intended.
+- Unposed frames: ~19 short gaps of 5-18 frames where the camera faces plain white wall or ceiling, plus one long gap, frames
+  550-594 (~2:30-2:42 of the video).
+Next: attempt 2 with 1,000 frames (denser overlap through blank stretches), same flags, scene `IMG_6615_1000f`. Sequential matching
+with loop detection was not used because it needs a vocab-tree download. RAM watch: 650 full-res frames used 10-11.6 GB before.
