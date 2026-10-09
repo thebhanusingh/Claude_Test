@@ -632,3 +632,15 @@ unmatched. Furniture (table, chairs, cabinets, rack) is in the posed set.
 Decision: train on the 720 posed frames (user can switch to a stronger matcher or a re-shoot). Added `MIN_POSED_FRAC` env to
 `fix_colmap_model.py` (default 0.8) so the threshold can be lowered on purpose; this run uses 0.7. Capture lesson: avoid pointing
 at bare ceiling or wall; keep furniture or edges in frame.
+
+**IMG_6615 baseline training (720 posed frames), 2026-10-08 20:23-21:06 laptop time.** `MIN_POSED_FRAC=0.7`, otherwise the
+HQ laptop flags (splatfacto-big, full res 1920x1080, stop-split-at 7000, antialiased, scale regularization, SO3xR3, cache cpu,
+30k). 43 min, ~10-10.5 it/s after densification. Readings: step 6,070 at 20:28 (111 ms/step), GPU 2.6 GB; after 7k GPU flat at
+**2.7 GB** (peak), 78-82 °C; RAM 9.0-9.1 GB with all 720 images cached (14 GB guard never hit). No errors. Output
+`exports/IMG_6615_1000f/splat.ply`: **988,855 Gaussians, 245 MB**; config `outputs/IMG_6615_1000f/splatfacto/2026-10-08_202317/`.
+Observation: with 720 indoor frames, big capped at 7k used only 2.7 of 8 GB, far below IMG_6556 (7.2 GB at 8.2k). The cap could
+go higher on this scene (e.g. 10-12k) for more detail. VRAM growth depends on the scene, not only on frame count.
+
+**hloc install (2026-10-08 20:46-~20:53).** New conda env `hloc` (gsplat untouched): torch 2.4.1+cu124 (GPU OK), pycolmap 4.2.1,
+hloc commit c13273b. Script `scripts/hloc_sfm.py` (laptop). SfM on the same 1,000 frames in `data/IMG_6615_hloc` started 21:07:
+pairs = next 20 frames + NetVLAD top-20 retrieval; SuperPoint (max) + LightGlue; pycolmap mapping, single shared OPENCV camera.
