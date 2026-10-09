@@ -702,3 +702,30 @@ COLMAP baseline, 988,855 / 245 MB). Config `outputs/IMG_6615_hloc/splatfacto/202
 (2) Even uncapped to 12k, this indoor scene peaked at 3.5 of 8 GB VRAM, so VRAM was never the limit here; RAM was.
 (3) Total pipeline for this scene: frame pick + 2 COLMAP attempts (both under 80% posed) -> 720-frame baseline (43 min) -> hloc SfM
 (41 min) -> WSL 24 GB -> this run (50 min).
+
+## Web-ready SOG exports for the portfolio (2026-10-09)
+
+Request: crop floaters, rotate +Y up, convert to PlayCanvas SOG (single file) under 30 MB each, save to Downloads.
+Tool: `@playcanvas/splat-transform` 3.10.1, installed locally on the laptop.
+
+**Orientation.** Room (IMG_6615_hloc, COLMAP frame): up vector from the 981 camera poses. Backyard (`Downloads\splat.ply`, school
+IMG_6557): this file is in nerfstudio's z-up frame (school run), not COLMAP; up from a RANSAC ground-plane fit (58% of splats on
+the plane). Both centred on the origin. **Gotcha:** splat-transform silently flips `.ply` input 180° about Z into PlayCanvas space;
+its rotate convention was measured on a 4-point test PLY before computing the angles.
+
+**Crop.** Box = 1st-99th percentile of opaque splats, padded 10%, then splat-transform's floater filter.
+- Room: 1,302,446 -> 1,270,340 (box) -> 1,236,049 (floaters).
+- Backyard: 4,154,121 -> 4,083,823 -> 4,063,803.
+
+**Size.**
+| Output | Gaussians | SH bands | Size | Alternatives measured |
+|---|---|---|---|---|
+| `Downloads\room-IMG_6615.sog` | 1,236,049 | 3 | 19,874,798 B (18.95 MiB) | SH2 19.0, SH1 18.4, SH0 15.6 MB |
+| `Downloads\backyard-IMG_6557.sog` | 2,300,000 (adaptive decimation) | 0 | 28,461,124 B (27.14 MiB) | full SH, 4.06M: 58.5 MB; SH1 at 2.3M: 33.4 MB |
+
+**Checks.** Both files read back as valid SOG with the expected counts; level renders with +Y up show both scenes upright.
+**Not done:** superspl.at/editor check. The laptop's built-in browser blocks superspl.at from loading a local file
+(`ERR_BLOCKED_BY_CLIENT`) and can't drive the file picker. User to drag the files onto https://superspl.at/editor, or allow
+Claude in Chrome.
+**Observation:** the backyard has spiky white/blue splats around the treetops against the sky. They are in the original school
+splat (training's sky model), not added by the conversion. Trimming them is offered (risk: clipping branch tips).
