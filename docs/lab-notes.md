@@ -664,3 +664,41 @@ cached full-res frames: 720 frames -> 9.0 GB, 981 -> ~15 GB. WSL has no `.wslcon
 Options: raise WSL memory (`.wslconfig` `memory=24GB` + `wsl --shutdown`, needs the user at the laptop), 1600-px frames, or
 fewer frames. Chose 3 of every 4 frames (~735, keeping frames next to unposed gaps), scene `IMG_6615_hloc735`, same flags.
 **Rule:** on this laptop, full-res 1080p caching allows about 750-800 frames before WSL RAM runs out.
+
+**735-frame subset run (`IMG_6615_hloc735`), 2026-10-08 ~22:05-22:12: stopped by choice at step 1,940** (6.5%, 45.6 ms/step, no
+errors) when the user chose to give WSL more RAM and train on all 981 frames. Data and log kept.
+
+**WSL memory raised to 24 GB (2026-10-08 ~22:12 laptop time).** Created `C:\Users\roach\.wslconfig` (none existed before):
+```
+[wsl2]
+memory=24GB
+```
+then `wsl --shutdown` and restarted Ubuntu from the Windows side (the user did not need to be at the laptop). `free -g`: 23 GB
+total, 22 GB available, 6 GB swap (was 15.5 GB). Side effects: the restart ended the old Ubuntu Claude process and closed the
+Windows Terminal dashboard window; keep-awake heartbeat, tmux `dash` and ttyd (localhost:7681 only) were restarted by hand.
+Windows keeps ~7.7 GB of the 31.7 GB.
+
+**IMG_6615 HQ splat on all 981 hloc frames, attempt 2 (2026-10-08 22:13:14-23:03:06 laptop time, 50 min, no errors).**
+`STOP_SPLIT=12000 EXTRA_TRAIN_ARGS="--pipeline.model.rasterize-mode antialiased --pipeline.model.use-scale-regularization True"
+./scripts/make_splat_hq.sh videos/IMG_6615.MOV IMG_6615_hloc 1000 30000` (steps 1-3 skipped; log `logs/IMG_6615_hloc_train2.log`).
+splatfacto-big, full res 1920x1080, cache cpu, SO3xR3, COLMAP coordinates. Watchers: 5-min progress, RAM stop at 22 GB, VRAM alert
+at 7.2 GB, slowdown and crash alerts (re-armed at the 30-min limit).
+
+| Time | Step | ms/step | GPU mem | GPU temp | RAM |
+|---|---|---|---|---|---|
+| 22:18 | 5,370 | 69 | 3.0 GB | 76 °C | 15.2 / 23.5 GB |
+| 22:23 | 8,000 | - | 3.5 GB | 78 °C | 15.2 |
+| 22:28 | 10,650 | 118 | 3.0-3.5 GB | 78 °C | 15.2 |
+| 22:33 | 13,200 | - | 3.5 GB (peak) | 79 °C | 15.2 |
+| 22:38 | 15,950 | ~105 (9 it/s) | 3.5 GB | 79 °C | 15.2 |
+| 22:43 | 18,810 | - | 3.5 GB | 81 °C | 15.2 |
+| 22:48 | 21,650 | - | 3.5 GB | 79 °C | 15.2 |
+| 22:53 | 24,510 | - | 3.5 GB | 79 °C | 15.2 |
+| 22:58 | 27,350 | - | 3.5 GB | 81 °C | 15.2 |
+
+No swap used. Export 40 s. Output `exports/IMG_6615_hloc/splat.ply`: **1,302,446 Gaussians, 323 MB** (+32% Gaussians vs the 720-frame
+COLMAP baseline, 988,855 / 245 MB). Config `outputs/IMG_6615_hloc/splatfacto/2026-10-08_221319/config.yml`.
+**Findings:** (1) 981 cached full-res frames need ~15.2 GB RAM, so the 24 GB WSL limit is what made this run possible on the laptop.
+(2) Even uncapped to 12k, this indoor scene peaked at 3.5 of 8 GB VRAM, so VRAM was never the limit here; RAM was.
+(3) Total pipeline for this scene: frame pick + 2 COLMAP attempts (both under 80% posed) -> 720-frame baseline (43 min) -> hloc SfM
+(41 min) -> WSL 24 GB -> this run (50 min).
