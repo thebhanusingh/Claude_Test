@@ -4,7 +4,7 @@ Short summary of how this project is set up, what we changed, and what has broke
 Full details, dates and numbers are in `docs/lab-notes.md`. Update both when something changes.
 
 ## Machine
-- Home laptop `Murph`: WSL2 Ubuntu 26.04, RTX 4070 Laptop **8 GB VRAM**, **15.5 GB RAM visible to WSL**
+- Home laptop `Murph`: WSL2 Ubuntu 26.04, RTX 4070 Laptop **8 GB VRAM**, **24 GB RAM given to WSL** via `C:\Users\roach\.wslconfig` (was 15.5 GB default until 2026-10-08)
   (Windows has 32 GB), 32 cores. Windows user folder is `/mnt/c/Users/roach/` (the videos are in `Downloads/`).
 - Conda: `~/miniforge3`. Main env `gsplat` (nerfstudio, COLMAP 3.10, PyTorch 2.11+cu128).
   Separate env `colmap4` (COLMAP 4.1.1 with `global_mapper`, not used in the pipeline yet).
@@ -66,3 +66,4 @@ Steps 1-3 are skipped if `data/<scene>/transforms_nsprocess.json` exists.
 | `IMG_6556` relightable | GaussianShader on `data_gaussianshader/IMG_6556` (undistorted) | Done 2026-09-29 01:18 (`scripts/runs/run_gs_6556.sh`: 30k iters, `-r 2`, `--data_device cpu`, `--densify_grad_threshold 0.0004 --densify_until_iter 7000`, env `gaussian_shader`). Train PSNR 25.06. `outputs_relightable/IMG_6556/point_cloud/iteration_{5..30}000/point_cloud.ply` (about 106 MB). GPU about 3.1 GB after densification. Watch runs with `scripts/watch_gaussianshader.sh PID LOG 30000`. |
 | `IMG_6557` (school) | IMG_6557.mov on the RTX PRO 6000 Blackwell 96 GB | 2026-09-29: splatfacto-big 60k, uncapped, 672 frames, exhaustive matching, 4.15M Gaussians, 982 MB, 13.6 GB peak VRAM, 1 h 46 min. Copy at `/mnt/c/Users/roach/Downloads/splat.ply`. Comparison vs the laptop in `exports/school_vs_laptop/` (offset-corrected held-out PSNR 25.19 vs 24.75, visibly crisper). |
 | `IMG_6557` | IMG_6557.MOV | Done 2026-09-29 10:58. splatfacto-big crashed at step 7390 ("CUDA driver error: device not ready"), and the automatic fallback to splatfacto finished 30k: `exports/IMG_6557/splat.ply` (1.45M Gaussians, 359 MB), config `outputs/IMG_6557/splatfacto/2026-09-29_100714/`. |
+| `IMG_6615_hloc` | IMG_6615.MOV (indoor, low texture) | Done 2026-10-08 23:03. hloc SfM (SuperPoint+LightGlue, 981/1000 posed; COLMAP managed 72%), splatfacto-big 30k, stop-split 12000, antialiased, scale reg. 1.30M Gaussians, 323 MB, 50 min, 3.5 GB VRAM, 15.2 GB RAM. `exports/IMG_6615_hloc/splat.ply`. |

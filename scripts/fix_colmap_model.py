@@ -12,6 +12,7 @@ Usage: fix_colmap_model.py <scene_dir>
 import json
 import shutil
 import subprocess
+import os
 import sys
 from pathlib import Path
 
@@ -19,6 +20,9 @@ from nerfstudio.data.utils.colmap_parsing_utils import read_images_binary
 from nerfstudio.process_data.colmap_utils import colmap_to_json
 
 scene = Path(sys.argv[1])
+# Minimum share of frames that must be posed (env MIN_POSED_FRAC, default 0.8). Lower it only on purpose,
+# e.g. when the unposed frames are known to be blank walls or ceiling.
+min_frac = float(os.environ.get("MIN_POSED_FRAC", "0.8"))
 sparse = scene / "colmap" / "sparse"
 num_images = len(list((scene / "images").glob("*.png")))
 
@@ -28,7 +32,7 @@ if not models:
 best = max(models, key=models.get)
 for m, n in sorted(models.items()):
     print(f"model {m.name}: {n} images{'  <- using this' if m == best else ''}")
-if models[best] < 0.8 * num_images:
+if models[best] < min_frac * num_images:
     print(f"WARNING: best model has only {models[best]}/{num_images} frames")
 
 refined = sparse / f"{best.name}_refined"
@@ -42,5 +46,5 @@ for name in ["transforms.json", "sparse_pc.ply"]:
 n = colmap_to_json(recon_dir=refined, output_dir=scene, keep_original_world_coordinate=True)
 frames = len(json.load(open(scene / "transforms.json"))["frames"])
 print(f"transforms.json written with {frames} frames (of {num_images} images)")
-if frames < 0.8 * num_images:
+if frames < min_frac * num_images:
     sys.exit("ERROR: too few frames have camera poses")
