@@ -622,3 +622,13 @@ EXTRA_TRAIN_ARGS="--pipeline.model.rasterize-mode antialiased --pipeline.model.u
   550-594 (~2:30-2:42 of the video).
 Next: attempt 2 with 1,000 frames (denser overlap through blank stretches), same flags, scene `IMG_6615_1000f`. Sequential matching
 with loop detection was not used because it needs a vocab-tree download. RAM watch: 650 full-res frames used 10-11.6 GB before.
+
+**IMG_6615 attempt 2 (2026-10-08 20:07-20:22 laptop time), scene `IMG_6615_1000f`.** Same flags, 1,000 frames (chosen sharpness
+median 111.5). Frames picked 20:07-20:09; COLMAP exhaustive 20:09-20:21 (~12 min; matching on GPU at 80 °C, mapping on CPU; RAM
+<= 2.4 GB). Two models: **720 frames (72%)** and 2 frames. The pose fix refused again (< 80%). Unposed: ~20 stretches of 6-15 frames
+plus frames 846-914 (~2:30-2:42). Sampled frames are almost all ceiling, fluorescent lights and bare white wall (a few show
+the corkboard wall and the table from above). Doubling frame density raised coverage only 68% -> 72%: the textureless views stay
+unmatched. Furniture (table, chairs, cabinets, rack) is in the posed set.
+Decision: train on the 720 posed frames (user can switch to a stronger matcher or a re-shoot). Added `MIN_POSED_FRAC` env to
+`fix_colmap_model.py` (default 0.8) so the threshold can be lowered on purpose; this run uses 0.7. Capture lesson: avoid pointing
+at bare ceiling or wall; keep furniture or edges in frame.
