@@ -644,3 +644,13 @@ go higher on this scene (e.g. 10-12k) for more detail. VRAM growth depends on th
 **hloc install (2026-10-08 20:46-~20:53).** New conda env `hloc` (gsplat untouched): torch 2.4.1+cu124 (GPU OK), pycolmap 4.2.1,
 hloc commit c13273b. Script `scripts/hloc_sfm.py` (laptop). SfM on the same 1,000 frames in `data/IMG_6615_hloc` started 21:07:
 pairs = next 20 frames + NetVLAD top-20 retrieval; SuperPoint (max) + LightGlue; pycolmap mapping, single shared OPENCV camera.
+
+**IMG_6615 hloc SfM result (2026-10-08 21:07-21:48 laptop time, 41 min, no errors).** **981 of 1,000 frames posed in a single model
+(98%)**, against COLMAP exhaustive 720 (72%, two models) on the same frames. Timings: NetVLAD retrieval 76 s (incl. one-time 529 MB
+weight download), 26,738 pairs (next 20 + NetVLAD top 20); SuperPoint (max) + LightGlue matching 671 s; pycolmap reconstruction
+1,695 s (last ~6 min global bundle adjustment on 8 CPU cores). Peaks GPU 1.4 GB, RAM 4.2 GB. Model: 156,467 points, mean reprojection
+error 1.43 px; OPENCV 1920x1080, fx 1564.3, fy 1562.2, cx/cy 960/540 (not refined), k1 0.139, k2 -0.233, p1/p2 ~0. Unposed: 522,
+539, 729-737, 801-803, 820, 846, 866-868 (short ceiling glances). The end-of-video corner (846-914), a 69-frame hole with COLMAP,
+is now almost fully covered. Output `data/IMG_6615_hloc/colmap/sparse/0`, summary `data/IMG_6615_hloc/hloc/summary.json`, log
+`logs/IMG_6615_hloc.log`. **Finding:** on low-texture indoor video, learned features + LightGlue with retrieval pairs solved the
+pose coverage problem that denser frames could not (68% -> 72% with COLMAP vs 98% with hloc).
