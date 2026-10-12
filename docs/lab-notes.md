@@ -788,3 +788,27 @@ Next (laptop, no training, needs the user's go-ahead): run on `exports/IMG_6556/
 view `clusters_debug.ply` and `orientation_debug.ply`, and record whether seat, back and legs form separate clusters,
 whether the shadow on the chair splits anything, and how flat/coherent the grass is. Planned metric for grain without
 labels: compare each cluster's projected grain with the image structure-tensor direction in a few frames.
+
+**First real run: IMG_6556 chair (2026-10-12, laptop, no training).** Script from `claude/project-thread-txhi4k`,
+conda env `gsplat` (numpy 1.26.4, scipy 1.15.3); laptop selftest PASSED in 1.0 s. Commands were run in a visible tmux
+window `work` (log `~/work_session.log` in WSL), as the user asked.
+- Chair location: ground plane from `exports/IMG_6556_shadowfix_v8_o/stats.json` (n = [-0.0089, -0.9496, -0.3134],
+  d = 1.787). 212,323 opaque Gaussians lie 5-60 cm above it. The densest 50 cm blob near the camera centroid (8,076 pts,
+  centre [0.714, 1.173, 0.492]) is the chair. Crop: `--crop 0.713 1.091 0.464 1.065` (about 0.8 m). The metre-to-unit
+  conversion, 1 m = 1.331 units, **assumes** a hand-held phone at 1.4 m; the true scale is unknown.
+- Outputs: `exports/IMG_6556_clusters_chair/` and `exports/IMG_6556_clusters_chair_a30/`. About 15.5 s per run wall time,
+  most of it PLY loading; clustering itself takes 1.7-1.9 s.
+
+| Run | Kept / flat | Links kept | Components -> clusters >= 200 | Cluster 0 | Cluster 1 |
+|---|---|---|---|---|---|
+| angle 20 | 76,211 / 31,473 (41%) | 185,321 of 503,568 | 5,605 -> 2 | 31,108 Gaussians, normal spread 51.9 deg, coherence 0.53 | 618, thin strip, spread 20.7 deg, coherence 0.85 |
+| angle 30 | same | 244,548 | 3,325 -> 2 | 31,770, spread 52.5 deg, coherence 0.54 | 6,787, ground patch at about 0 cm, spread 48.4 deg, coherence 0.02 |
+
+**Result: negative on the first try. The chair is not split into seat, back and legs.** Almost every flat Gaussian ends
+up in one cluster spanning about 52 deg of normals. Diagnosis (inferred, being tested): the neighbour-to-neighbour angle
+test **chains**. Noisy real normals give many small steps under 20 deg, which link across creases that a clean synthetic
+box never has. At the same time the graph is very fragmented: 5,605 components, so most Gaussians fall in clusters
+below 200. The ground under the chair hardly forms a cluster at all (grass is volumetric; this matches risk (b)).
+Next: a sweep of angle 10 / 15, radius 1.5 and stricter opacity/flatness, plus a check of the shortest-axis normal
+against a neighbour-PCA normal. Planned code change if chaining is confirmed: grow each region against its seed or
+running-mean normal rather than only the neighbour's normal (PCL-style region growing with a curvature limit).
