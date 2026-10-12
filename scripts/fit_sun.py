@@ -161,6 +161,10 @@ def fit(xyz, opacity, up, offset, tol, centre, args, votes=None):
     rec_idx = np.flatnonzero(near & (np.abs(height) <= tol))
     occ_r = args.occluder_radius or 1.5 * args.radius  # shadows inside the region can come from objects outside it
     occ_mask = (np.linalg.norm(xyz - centre, axis=1) < occ_r) & (opacity > args.opaque) & (height > args.occluder_min)
+    if args.occluder_labels:  # only the hero object casts: Gaussians assigned to a stage-3 cluster
+        labels = np.load(args.occluder_labels)["labels"]
+        occ_mask &= labels >= 0
+        print(f"occluders limited to stage-3 clusters from {args.occluder_labels}")
     occ = xyz[occ_mask]
     print(f"{len(rec_idx):,} ground receivers within {args.radius} of the centre, {len(occ):,} occluders "
           f"within {occ_r:g} (opacity > {args.opaque}, > {args.occluder_min} above the plane)")
@@ -170,6 +174,9 @@ def fit(xyz, opacity, up, offset, tol, centre, args, votes=None):
     else:
         shadow, seen = votes
     keep = seen >= args.min_views
+    if args.score_radius:  # score only receivers near the object's footprint (votes stay cached for the full radius)
+        foot = centre - (centre @ up + offset) * up
+        keep &= np.linalg.norm(xyz[rec_idx] - foot, axis=1) < args.score_radius
     rec_idx, frac = rec_idx[keep], shadow[keep] / seen[keep]
     rec = xyz[rec_idx]
     obs = frac >= 0.5
@@ -279,6 +286,10 @@ def main():
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--ground-tol", type=float, help="receiver band around the plane (default: the plane's own tol)")
     ap.add_argument("--occluder-radius", type=float, help="occluder search radius (default 1.5 x --radius)")
+    ap.add_argument("--occluder-labels", type=Path,
+                    help="clusters.npz from cluster_surfaces.py: only clustered Gaussians (the object) cast shadows")
+    ap.add_argument("--score-radius", type=float, default=0.0,
+                    help="if > 0, score only receivers within this distance of the object's footprint on the plane")
     ap.add_argument("--occluder-min", type=float, default=0.05, help="min height above the plane for occluders")
     ap.add_argument("--opaque", type=float, default=0.5)
     ap.add_argument("--max-occluders", type=int, default=150_000, help="random subsample for speed")
