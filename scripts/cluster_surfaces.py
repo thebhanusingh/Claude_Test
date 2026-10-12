@@ -211,6 +211,7 @@ def cluster(data, args):
     print(f"{ok.sum():,} of {len(src):,} neighbour links kept, {ncomp:,} {mode}, "
           f"{len(order):,} clusters >= {args.min_size} Gaussians")
 
+    grown = labels >= 0  # members admitted by the normal test; attached ones below are not
     # non-flat (and dropped) Gaussians join the nearest clustered flat neighbour
     clustered = np.flatnonzero(labels >= 0)
     rest = np.flatnonzero(use & (labels < 0))
@@ -229,14 +230,14 @@ def cluster(data, args):
     dom = np.zeros((len(order), 3))
     for c in range(len(order)):
         m = labels == c
-        mn = labels[fi] == c
+        mn = grown[fi] & (labels[fi] == c)  # normal stats over grown members only
         cn, _ = structure_dir(normal[fi][mn], np.ones(mn.sum()))
         d, coh = structure_dir(a[m], w[m])
         dom[c] = d
         p = xyz[m]
         ext = np.linalg.svd(p - p.mean(0), full_matrices=False)[1] / np.sqrt(len(p))
         stats.append({
-            "cluster": c, "gaussians": int(m.sum()), "centre": p.mean(0).round(4).tolist(),
+            "cluster": c, "gaussians": int(m.sum()), "grown": int(mn.sum()), "centre": p.mean(0).round(4).tolist(),
             "normal_axis": cn.round(4).tolist(),
             "normal_spread_deg": float(np.degrees(np.arccos(np.clip(
                 np.abs(normal[fi][mn] @ cn).mean(), -1, 1)))),
@@ -457,7 +458,7 @@ def main():
     res, stats = cluster(data, args)
     write_outputs(header, data, res, stats, args.out)
     for s in stats[:15]:
-        print(f"cluster {s['cluster']:3d}: {s['gaussians']:8,d} Gaussians, normal {s['normal_axis']}, "
+        print(f"cluster {s['cluster']:3d}: {s['gaussians']:8,d} Gaussians ({s['grown']:,} grown), normal {s['normal_axis']}, "
               f"spread {s['normal_spread_deg']:.1f} deg, grain {s['grain_dir']} coherence {s['grain_coherence']}")
 
 

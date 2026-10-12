@@ -812,3 +812,39 @@ below 200. The ground under the chair hardly forms a cluster at all (grass is vo
 Next: a sweep of angle 10 / 15, radius 1.5 and stricter opacity/flatness, plus a check of the shortest-axis normal
 against a neighbour-PCA normal. Planned code change if chaining is confirmed: grow each region against its seed or
 running-mean normal rather than only the neighbour's normal (PCL-style region growing with a curvature limit).
+
+**Sweep and normal check (2026-10-12, laptop, same crop).** Tighter plain-component settings only fragment the chair:
+angle 10 gives 16 clusters, angle 15 + radius 1.5 gives 15, angle 15 + opacity 0.7 + flat 0.2 gives 10. Every cluster
+still spans 20-48 deg of normals. **Normal check:** angle between each flat Gaussian's shortest axis and a PCA plane fit
+to its 16 nearest neighbours. 0-5 cm above the ground plane: median 44.7 deg, p90 80.3 deg (n = 3,964). More than 5 cm
+above: median 23.7 deg, p90 64.1 deg (n = 21,379). Below the plane: median 47.5 deg, p90 80.9 deg (n = 6,130). So on real
+splats the shortest axis is a poor normal, and close to random on grass. On the synthetic scene the two agree to a
+median of 1.1 deg. **Chaining confirmed as the cause.**
+
+Fix (commit `a40e125`): `--region-angle A` (seeded region growing; a Gaussian joins only if its normal is within A of
+the region's running mean normal) and `--normal-source axis|pca|agree` (agree = PCA normal, dropping Gaussians whose
+axis and PCA normals differ by more than `--agree`). Selftest updated: it now also checks cluster purity (> 0.95), and
+in region mode the sphere may split into patches. It passes in all four modes. With PCA normals, about 4% of
+crease-edge splats land on the adjacent face (purity 0.96).
+
+| Run (all `--crop 0.713 1.091 0.464 1.065`) | Flat used | Regions -> clusters | Notes |
+|---|---|---|---|
+| (d) `--region-angle 30` | 31,473 | 6,489 -> 18 | backrest still one 14.8k cluster |
+| (e) `--region-angle 30 --normal-source pca` | 31,473 | 6,864 -> 21 | axis vs PCA in crop: median 29.7 deg, p90 73.3 deg |
+| **(f) `--region-angle 30 --normal-source agree --agree 30`** | 15,862 (15,611 dropped) | 2,345 -> 14 | **best: chair split into its parts** |
+| (g) `--angle 15 --region-angle 20 --normal-source agree` | 15,862 | 3,463 -> 13 | similar to f, fewer clustered (24.5k) |
+
+**Result (f), checked visually** on `exports/IMG_6556_clusters_chair_r30agree/cluster_views.png` (top view and two
+side views, 50k of 57,557 opaque Gaussians). The chair is an Adirondack chair: seat about 0.4 m, armrests about
+0.62 m, backrest top about 1.1 m. Those are normal proportions, which supports the assumed scale (1 unit = 0.751 m). The
+clusters follow the parts: the fanned backrest slats form one large cluster plus one for the top curve and outer slats;
+the seat is one cluster (normal 16.7 deg from up); each armrest is its own cluster; front and back legs are separate.
+The ground stays unclustered, and there is no visible bleed between backrest and seat.
+
+Problems found and fixes (stage 3):
+2. **Reported normal spread was inflated (40-45 deg on big clusters, above the 30 deg region limit).** The stat
+   included flat Gaussians from regions under `--min-size`, which are attached to the nearest cluster afterwards
+   with no normal test. In (f) only about 8.2k of the 30,070 cluster members were grown; 7.7k small-region flat and
+   14.2k non-flat Gaussians were attached. Fix: normal stats now use grown members only, and stats.json and the
+   printout add a `grown` count. **Caveat for the thesis:** most cluster members are assigned by nearest-neighbour
+   attachment, not by the normal test. Attachment quality needs its own check before stage 5 relies on it.
