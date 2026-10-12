@@ -113,6 +113,7 @@ def collect_votes(xyz, opacity, rec_idx, args):
     seen = np.zeros(len(rec_idx), np.int32)
     occl = xyz[opacity > args.opaque]
     used = 0
+    print(f"collecting shadow votes from up to {len(frames)} frames (progress every 25)", flush=True)
     for fr in frames:
         mpath = args.masks / (Path(fr["name"]).stem + ".png")
         if not mpath.exists():
@@ -143,6 +144,8 @@ def collect_votes(xyz, opacity, rec_idx, args):
         shadow[front] += mask[ur[:, 1].astype(int), ur[:, 0].astype(int)] > 127
         seen[front] += 1
         used += 1
+        if used % 25 == 0:
+            print(f"  votes: {used} frames done ({fr['name']})", flush=True)
     print(f"votes from {used} masked frames: receivers seen >= {args.min_views}x: {(seen >= args.min_views).sum():,}")
     return shadow, seen
 
