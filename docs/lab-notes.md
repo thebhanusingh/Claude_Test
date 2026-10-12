@@ -31,6 +31,7 @@ problems back to when something changed.
 | `scripts/watch_gaussianshader.sh` (was `watch_gs.sh`) | Same idea for GaussianShader's tqdm progress bar. Args: `PID LOG TOTAL_ITERS`. |
 | 2026-09-30 repo corrections | `setup_env.sh` patches nerfstudio for COLMAP >= 3.12 option names. `make_splat.sh` gained `METHOD` / `MATCHING` / `DOWNSCALE` overrides, a split-COLMAP check (refuses to train if fewer than 80% of frames are posed) and nerfstudio-viewer-first wording. `*.log` and local artifacts are gitignored. Docs updated for gcc 15 / conda CUDA headers / WSL admin. |
 | `scripts/cluster_surfaces.py` (2026-10-12) | Stage 3 of the shadow-free splat plan: groups Gaussians into continuous surfaces from normals and neighbour links only (no colour), and gives each surface and each Gaussian a grain direction with a coherence score. Writes debug PLYs coloured by cluster and by grain angle. `--selftest` runs a synthetic ground + box + sphere scene. |
+| `scripts/check_grain.py` (2026-10-12) | Validates stage 3 grain against the photos: projects each clustered Gaussian's local grain into 6 frames around the object (z-buffer, grazing views skipped) and compares it with the photo's structure-tensor texture direction, against rotated-90 and random baselines; `--pixels edges|interior`. Writes overlays + grain_check.json. Imports `fix_splat_shadows.py`. |
 
 ## Training runs
 
@@ -859,3 +860,38 @@ Windows repo folder as `chair_clusters_r30agree.png`.
 Open for stage 3: (1) check the 73% of members that come from attachment (for example, the normal test
 against their cluster for attached flat Gaussians, or a visual check per part); (2) validate the grain against the
 image structure tensor in a few frames; (3) repeat on a second object.
+
+**Attachment and grain checks (2026-10-12, laptop; scripts `1b0b942` and `check_grain.py`).**
+Attachment (`--attach-angle`, rerun of (f) as `..._r30agree_v3` without and `..._r30agree_att30` with a 30 deg limit):
+of the 4,457 flat Gaussians that are attached after growing, only 7% face within 30 deg of their cluster normal
+(median 59.7 deg off). With the limit, 293 stay attached; clusters lose 10-20% of members; grown cores and spreads are unchanged.
+
+Grain vs photos (`check_grain.py` on `..._r30agree_v3`, 6 frames, one per 60 deg azimuth bin; image texture direction =
+along-edge eigenvector of a Sobel structure tensor, sigma 3 px, coherence > 0.3; surfaces seen at |n . ray| < 0.4
+skipped, because a first version without that gave unfairly easy baselines):
+
+| Pixels | n | Grain median | Rot90 median | Random median | Grain < 20 deg | Random < 20 deg |
+|---|---|---|---|---|---|---|
+| edges (above median gradient energy) | 17,324 | 5.5 deg | 81.8 deg | 43.5 deg | 87% | 23% |
+| **interior (> 8 px from Canny edges)** | 3,941 | **9.1 deg** | 79.7 deg | 43.6 deg | **74%** | 23% |
+
+Interior by group: grown 10.0 deg, attached flat 5.9 deg, attached non-flat 9.6 deg. Per cluster 3-14 deg for most;
+cluster 6 21 deg, cluster 9 17 deg. With `--attach-angle 30` the interior median worsens to 10.6 deg.
+
+**Result: the Gaussians' elongation follows the visible surface texture (the slat wood-grain emboss), not just outlines.**
+The interior score is the meaningful one: densification stretches Gaussians along image edges, so edge agreement is
+partly built in. Most interior misses lie where the cast-shadow edge crosses the back slats; there the photo's texture
+direction follows the shadow line, not the material, which is the behaviour stage 5 needs (inferred from the overlays
+in `grain_check_interior/`).
+
+**Decision (2026-10-12): keep `--attach-angle` off by default.** Attached flat Gaussians have wrong normals but the best
+grain, so they stay as grain carriers. The normal test decides surface membership only while regions grow.
+Stage 3 on the chair: **done** (clusters = chair parts, normal spread 12-21 deg, grain verified at 9 deg median).
+Carried forward: signed normals for stage 4 (PCA normals oriented toward the observing cameras); the ground has no
+usable surface or grain (grass); repeat on a dedicated hero-object capture.
+
+Process problem (laptop terminal): two tmux `send-keys` commands were glued onto one line (`...log{ python ...`):
+the previous command had been recalled from shell history at the prompt, and the next one was typed after it, so bash
+gave `syntax error near unexpected token '}'`. The user spotted it in the visible terminal. Fix: clear the prompt line
+(C-u) before typing, never send while the pane is busy, and wait for each command's done marker. Typing in that pane while
+Claude works gets wiped, so use a second tmux window (Ctrl-b c) for manual commands.
