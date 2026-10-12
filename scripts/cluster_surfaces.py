@@ -15,6 +15,12 @@ orientation. Colour is deliberately NOT used, so a shadow edge never splits a su
    while a crease (box corner, chair seat meeting a leg) splits it. Connected components
    below --min-size are dropped; non-flat Gaussians join the cluster of their nearest
    flat neighbour if it is within the same distance.
+   --region-angle A (2026-10-12, after the first real run chained across the whole chair): grow
+   regions instead, admitting a Gaussian only if its normal is within A of the region's running
+   mean normal. Creases hold on noisy normals; curved surfaces split into patches.
+   --normal-source pca|agree: replace the shortest-axis normal (median 24-45 deg off the local
+   surface on IMG_6556) with a plane fit to the k nearest neighbours; agree also drops Gaussians
+   whose two normals differ by more than --agree.
 3. Orientation: structure tensor of the projected major axes (sum of w a a^T, so the
    sign of a doesn't matter). Per cluster: the top eigenvector is the dominant direction
    and coherence (l1 - l2) / (l1 + l2) says how strong it is (0 = no grain, 1 = all
@@ -110,6 +116,36 @@ def structure_dir(vecs, w):
 
 # ---------- main ----------
 
+def grow_regions(normal, src, dst, n, cos_lim):
+    """Region growing over the neighbour links: a Gaussian joins a region only if its normal is within
+    the limit of the region's running mean normal, so many small steps can't chain across a crease.
+    Seeds are taken in order of how many links they have (interior of smooth surfaces first)."""
+    order = np.argsort(np.r_[src, dst], kind="stable")
+    both = np.r_[dst, src][order]
+    start = np.searchsorted(np.r_[src, dst][order], np.arange(n + 1))
+    comp = -np.ones(n, int)
+    ncomp = 0
+    for seed in np.argsort(-np.diff(start), kind="stable"):
+        if comp[seed] >= 0:
+            continue
+        comp[seed] = ncomp
+        acc = normal[seed].copy()
+        stack = [seed]
+        while stack:
+            i = stack.pop()
+            for j in both[start[i]:start[i + 1]]:
+                if comp[j] >= 0:
+                    continue
+                m = acc / np.linalg.norm(acc)
+                c = normal[j] @ m
+                if abs(c) >= cos_lim:
+                    comp[j] = ncomp
+                    acc += normal[j] if c > 0 else -normal[j]
+                    stack.append(j)
+        ncomp += 1
+    return comp, ncomp
+
+
 def cluster(data, args):
     t0 = time.time()
     xyz = np.stack([data["x"], data["y"], data["z"]], 1).astype(np.float64)
@@ -124,8 +160,26 @@ def cluster(data, args):
         c, r = np.array(args.crop[:3]), args.crop[3]
         use &= np.linalg.norm(xyz - c, axis=1) < r
     flat = use & (flatness < args.flat)
+    if args.normal_source != "axis":
+        # PCA normal from the positions of the k nearest kept Gaussians (sign-free, like the axis normal)
+        ui = np.flatnonzero(use)
+        _, nbp = cKDTree(xyz[ui]).query(xyz[flat], k=min(args.k + 1, len(ui)))
+        P = xyz[ui][nbp] - xyz[ui][nbp].mean(1, keepdims=True)
+        lam, V = np.linalg.eigh(np.einsum("nki,nkj->nij", P, P))
+        pca = V[:, :, 0]
+        disagree = np.degrees(np.arccos(np.clip(np.abs(np.einsum("ij,ij->i", pca, normal[flat])), 0, 1)))
+        print(f"axis vs PCA normal: median {np.median(disagree):.1f} deg, p90 {np.percentile(disagree, 90):.1f} deg")
+        if args.normal_source == "agree":
+            fl = np.flatnonzero(flat)
+            drop = disagree > args.agree
+            flat[fl[drop]] = False
+            pca, disagree = pca[~drop], disagree[~drop]
+            print(f"dropped {drop.sum():,} flat Gaussians whose axis and PCA normals differ by > {args.agree} deg")
+        normal = normal.copy()
+        normal[flat] = pca
     fi = np.flatnonzero(flat)
-    print(f"{len(data):,} Gaussians, {use.sum():,} kept (opacity/crop), {len(fi):,} flat enough for a normal")
+    print(f"{len(data):,} Gaussians, {use.sum():,} kept (opacity/crop), {len(fi):,} flat enough for a normal "
+          f"(normals: {args.normal_source})")
     if len(fi) < args.min_size:
         raise SystemExit("ERROR: too few flat Gaussians to cluster")
 
@@ -137,10 +191,14 @@ def cluster(data, args):
     src = np.repeat(np.arange(len(fi)), k - 1)
     dst = nb.ravel()
     reach = args.radius * np.maximum(size[fi][src], size[fi][dst])
-    cosang = np.abs(np.einsum("ij,ij->i", normal[fi][src], normal[fi][dst]))
+    nf = normal[fi]
+    cosang = np.abs(np.einsum("ij,ij->i", nf[src], nf[dst]))
     ok = (dist.ravel() < reach) & (cosang > np.cos(np.radians(args.angle)))
-    g = coo_matrix((np.ones(ok.sum()), (src[ok], dst[ok])), shape=(len(fi), len(fi)))
-    ncomp, comp = connected_components(g, directed=False)
+    if args.region_angle > 0:
+        comp, ncomp = grow_regions(nf, src[ok], dst[ok], len(fi), np.cos(np.radians(args.region_angle)))
+    else:
+        g = coo_matrix((np.ones(ok.sum()), (src[ok], dst[ok])), shape=(len(fi), len(fi)))
+        ncomp, comp = connected_components(g, directed=False)
     counts = np.bincount(comp)
     keep = counts >= args.min_size
     remap = -np.ones(ncomp, int)
@@ -149,7 +207,8 @@ def cluster(data, args):
     remap[order] = np.arange(len(order))  # cluster 0 = largest
     labels = -np.ones(len(data), int)
     labels[fi] = remap[comp]
-    print(f"{ok.sum():,} of {len(src):,} neighbour links kept, {ncomp:,} components, "
+    mode = f"regions within {args.region_angle} deg of their mean normal" if args.region_angle > 0 else "components"
+    print(f"{ok.sum():,} of {len(src):,} neighbour links kept, {ncomp:,} {mode}, "
           f"{len(order):,} clusters >= {args.min_size} Gaussians")
 
     # non-flat (and dropped) Gaussians join the nearest clustered flat neighbour
@@ -339,8 +398,16 @@ def selftest(args):
         share = float((lab == main).mean())
         st = stats[main] if main >= 0 else {}
         print(f"{name:9s}  {main:12d}  {share:5.2f}  {str(st.get('grain_dir')):24s} {st.get('grain_coherence')}")
-        ok &= share > 0.9 and main not in used
+        # region growing splits a curved surface into patches by design; flat faces must stay whole
+        ok &= main not in used and (share > 0.9 or (name == "sphere" and args.region_angle > 0))
         used.add(main)
+    # every cluster must come from one group only (no surface leaks into another)
+    gid = np.zeros(len(data), int)
+    for g, sl in enumerate(groups.values()):
+        gid[sl] = g
+    purity = min(np.bincount(gid[labels == c]).max() / (labels == c).sum() for c in range(labels.max() + 1))
+    print(f"clusters: {labels.max() + 1}, worst purity {purity:.3f}")
+    ok &= purity > 0.95  # PCA normals blur creases: a few edge splats can land on the adjacent face
     gd = np.abs(np.array(stats[labels[0]]["grain_dir"]))
     ok &= gd[0] > 0.95 and stats[labels[0]]["grain_coherence"] > 0.8  # ground grain along x
     side = stats[labels[6000]]
@@ -353,8 +420,10 @@ def selftest(args):
     gerr = np.degrees(np.arccos(np.clip(np.abs(res["local_dir"][:6000, 0]), 0, 1)))
     print(f"local grain error: ground median {np.median(gerr):.1f} deg, sphere median {np.median(err):.1f} deg")
     ok &= np.median(err) < 10 and np.median(gerr) < 5
-    # the darkened half of the ground must not split off (colour is not used)
-    ok &= len(set(labels[:6000][labels[:6000] >= 0])) == 1
+    # the darkened half of the ground must not split off (colour is not used); a few splats where the
+    # box stands on the ground (lit half) may go to a box face with PCA normals
+    dark = data["x"][:6000] < 0
+    ok &= (labels[:6000][dark] == labels[0]).mean() > 0.99 and (labels[:6000][~dark] == labels[0]).mean() > 0.95
     print("\nSELFTEST", "PASSED" if ok else "FAILED")
     return 0 if ok else 1
 
@@ -371,6 +440,13 @@ def main():
     ap.add_argument("--radius", type=float, default=3.0, help="link distance, in multiples of the larger splat's longest axis")
     ap.add_argument("--angle", type=float, default=20.0, help="max normal difference between linked neighbours (degrees)")
     ap.add_argument("--min-size", type=int, default=200, help="smallest cluster kept")
+    ap.add_argument("--region-angle", type=float, default=0.0,
+                    help="if > 0, grow regions against their running mean normal (degrees) instead of plain "
+                         "connected components; stops chaining across creases on noisy normals")
+    ap.add_argument("--normal-source", choices=["axis", "pca", "agree"], default="axis",
+                    help="axis: each Gaussian's shortest axis; pca: plane fit to its k nearest neighbours; "
+                         "agree: pca, keeping only Gaussians whose two normals differ by <= --agree")
+    ap.add_argument("--agree", type=float, default=30.0, help="max axis/PCA normal difference for --normal-source agree")
     ap.add_argument("--selftest", action="store_true", help="run on a synthetic ground + box + sphere scene")
     args = ap.parse_args()
     if args.selftest:
