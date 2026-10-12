@@ -111,7 +111,11 @@ def collect_votes(xyz, opacity, rec_idx, args):
     rec = xyz[rec_idx]
     shadow = np.zeros(len(rec_idx), np.int32)
     seen = np.zeros(len(rec_idx), np.int32)
-    occl = xyz[opacity > args.opaque]
+    occl_mask = opacity > args.opaque
+    if args.zbuf_radius:  # view occluders far from the region rarely matter and dominate the run time
+        occl_mask &= np.linalg.norm(xyz - xyz[rec_idx].mean(0), axis=1) < args.zbuf_radius
+    occl = xyz[occl_mask]
+    print(f"z-buffer from {len(occl):,} opaque Gaussians", flush=True)
     used = 0
     print(f"collecting shadow votes from up to {len(frames)} frames (progress every 25)", flush=True)
     for fr in frames:
@@ -286,6 +290,9 @@ def main():
     ap.add_argument("--min-views", type=int, default=5)
     ap.add_argument("--zbuf-scale", type=float, default=0.25)
     ap.add_argument("--z-tol", type=float, default=0.03)
+    ap.add_argument("--zbuf-radius", type=float, default=0.0,
+                    help="if > 0, only opaque Gaussians within this distance of the receivers build the view z-buffer "
+                         "(faster; the first IMG_6556 run with all 2.9M took 15+ min)")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
