@@ -1053,3 +1053,20 @@ positive (0.8-2 deg high), which points to a systematic input bias rather than n
 3. mask bias (fat or thin SDDNet masks);
 4. plane tilt (the plane's up direction vs the camera up: 0.998, about 3.6 deg).
 More captures with known times will separate a constant bias from scene noise.
+
+**Receiver-height test (laptop, 2026-10-12, `--receiver-shift`, boundary score, score radius 1.2).** Hypothesis: the
+grass Gaussians sit above where the shadow shows in the photos (on the soil between blades). Positive shift = receivers
+moved down, in scene units (0.02 = about 1.5 cm):
+
+| shift | elevation (Nelder-Mead) | error | chamfer | IoU | grid uncertainty |
+|---|---|---|---|---|---|
+| +0.02 (down 1.5 cm) | 57.30 | +1.79 | 0.0198 | 0.680 | 1.76 |
+| 0 | 56.30 | +0.79 | 0.0200 | - | 1.2 |
+| -0.02 (up 1.5 cm) | 55.03 | -0.48 | 0.0193 | 0.693 | 1.03 |
+
+Lowering the receivers raises the fitted sun (the same outline on lower ground needs a steeper sun), so "grass sits too
+high" is ruled out in that form. The elevation moves about 1.1-1.3 deg per 1.5 cm of receiver height, and zero error
+sits near a 1.2 cm upward shift. The raised version also fits the outline slightly better (lowest chamfer, highest
+IoU), so the data itself weakly prefers it. Effective equivalents of "receivers higher": casters (chair splats)
+slightly too tall or fat, or masks slightly wide. The capture also shows how sensitive elevation is to centimetre-level
+geometry: about 1 deg per cm here.
