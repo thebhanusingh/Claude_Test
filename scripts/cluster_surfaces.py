@@ -212,14 +212,32 @@ def cluster(data, args):
           f"{len(order):,} clusters >= {args.min_size} Gaussians")
 
     grown = labels >= 0  # members admitted by the normal test; attached ones below are not
-    # non-flat (and dropped) Gaussians join the nearest clustered flat neighbour
+    # non-flat (and dropped) Gaussians join the nearest clustered flat neighbour. Flat ones (trusted
+    # normal) left in small regions must also face the same way as the cluster's grown members when
+    # --attach-angle > 0; non-flat ones have no trusted normal, so only distance applies.
     clustered = np.flatnonzero(labels >= 0)
     rest = np.flatnonzero(use & (labels < 0))
+    attach_off = np.full(len(data), np.nan)  # angle to the cluster normal, for attached flat Gaussians
     if len(rest) and len(clustered):
+        cl_n = np.array([structure_dir(normal[clustered[labels[clustered] == c]], np.ones((labels[clustered] == c).sum()))[0]
+                         for c in range(len(order))])
         d, j = cKDTree(xyz[clustered]).query(xyz[rest])
         near = d < args.radius * np.maximum(size[rest], size[clustered[j]])
-        labels[rest[near]] = labels[clustered[j[near]]]
-        print(f"{near.sum():,} of {len(rest):,} other Gaussians attached to a nearby cluster")
+        tgt = labels[clustered[j]]
+        rflat = flat[rest]
+        off = np.degrees(np.arccos(np.clip(np.abs(np.einsum("ij,ij->i", normal[rest], cl_n[tgt])), 0, 1)))
+        if args.attach_angle > 0:
+            near &= ~rflat | (off <= args.attach_angle)
+        labels[rest[near]] = tgt[near]
+        attach_off[rest[near & rflat]] = off[near & rflat]
+        af = near & rflat
+        print(f"{near.sum():,} of {len(rest):,} other Gaussians attached to a nearby cluster "
+              f"({af.sum():,} flat, {(near & ~rflat).sum():,} non-flat)")
+        if (rflat & (d < args.radius * np.maximum(size[rest], size[clustered[j]]))).any():
+            o = off[rflat & (d < args.radius * np.maximum(size[rest], size[clustered[j]]))]
+            print(f"flat candidates vs their cluster normal: median {np.median(o):.1f} deg, p90 "
+                  f"{np.percentile(o, 90):.1f} deg, {(o <= 30).mean() * 100:.0f}% within 30 deg"
+                  + (f"; attach limit {args.attach_angle} deg" if args.attach_angle > 0 else ""))
 
     # 3. orientation: project major axis into each Gaussian's tangent plane
     a = major - np.einsum("ij,ij->i", major, normal)[:, None] * normal
@@ -237,7 +255,8 @@ def cluster(data, args):
         p = xyz[m]
         ext = np.linalg.svd(p - p.mean(0), full_matrices=False)[1] / np.sqrt(len(p))
         stats.append({
-            "cluster": c, "gaussians": int(m.sum()), "grown": int(mn.sum()), "centre": p.mean(0).round(4).tolist(),
+            "cluster": c, "gaussians": int(m.sum()), "grown": int(mn.sum()),
+            "attached_flat": int((m & ~grown & flat).sum()), "attached_nonflat": int((m & ~grown & ~flat).sum()), "centre": p.mean(0).round(4).tolist(),
             "normal_axis": cn.round(4).tolist(),
             "normal_spread_deg": float(np.degrees(np.arccos(np.clip(
                 np.abs(normal[fi][mn] @ cn).mean(), -1, 1)))),
@@ -261,7 +280,7 @@ def cluster(data, args):
         local_coh[cl] = np.where(s12 > 1e-12, (lam[:, 2] - lam[:, 1]) / np.maximum(s12, 1e-12), 0)
 
     print(f"done in {time.time() - t0:.1f} s")
-    return dict(labels=labels, normal=normal, grain=a, grain_weight=w, flatness=flatness,
+    return dict(labels=labels, grown=grown, attach_off=attach_off, normal=normal, grain=a, grain_weight=w, flatness=flatness,
                 elongation=elong, local_dir=local_dir, local_coh=local_coh, cluster_dir=dom), stats
 
 
@@ -448,6 +467,9 @@ def main():
                     help="axis: each Gaussian's shortest axis; pca: plane fit to its k nearest neighbours; "
                          "agree: pca, keeping only Gaussians whose two normals differ by <= --agree")
     ap.add_argument("--agree", type=float, default=30.0, help="max axis/PCA normal difference for --normal-source agree")
+    ap.add_argument("--attach-angle", type=float, default=0.0,
+                    help="if > 0, a flat Gaussian left in a small region is attached only if its normal is within "
+                         "this many degrees of the cluster's normal (non-flat ones attach by distance only)")
     ap.add_argument("--selftest", action="store_true", help="run on a synthetic ground + box + sphere scene")
     args = ap.parse_args()
     if args.selftest:
@@ -458,7 +480,8 @@ def main():
     res, stats = cluster(data, args)
     write_outputs(header, data, res, stats, args.out)
     for s in stats[:15]:
-        print(f"cluster {s['cluster']:3d}: {s['gaussians']:8,d} Gaussians ({s['grown']:,} grown), normal {s['normal_axis']}, "
+        print(f"cluster {s['cluster']:3d}: {s['gaussians']:8,d} Gaussians ({s['grown']:,} grown, "
+              f"{s['attached_flat']:,} flat + {s['attached_nonflat']:,} non-flat attached), normal {s['normal_axis']}, "
               f"spread {s['normal_spread_deg']:.1f} deg, grain {s['grain_dir']} coherence {s['grain_coherence']}")
 
 
