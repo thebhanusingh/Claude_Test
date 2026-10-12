@@ -1042,7 +1042,7 @@ on two halves. True elevation 55.51 deg (+/-0.1):
 | area IoU | 1.2 | 55.00 | -0.51 | 1.0 | 57.0 / 56.0 |
 | area IoU | 1.8 | 57.75 | +2.24 | 1.7 | 57.25 / 56.75 |
 | boundary | 1.2 | 56.30 | +0.79 | 1.2 | 57.25 / 56.0 |
-| boundary | 1.8 | 56.98 | +1.47 | 1.4 | 57.5 / 57.25 |
+| boundary | 1.8 | 56.98 | +1.47 | 1.4 | 57.5 / 57.25  (3.24 deg apart, mostly azimuth; 24,445 casters, 509,739 receivers, 4 min 23 s) |
 
 Outlines agree to 0.020 units (about 1.5 cm, one raster cell). Changing the score radius now moves the answer by
 0.7 deg instead of 2.75 deg, so boundary scoring is **more stable, not more accurate**. The error is almost always
