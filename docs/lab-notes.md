@@ -1063,10 +1063,11 @@ moved down, in scene units (0.02 = about 1.5 cm):
 | +0.02 (down 1.5 cm) | 57.30 | +1.79 | 0.0198 | 0.680 | 1.76 |
 | 0 | 56.30 | +0.79 | 0.0200 | - | 1.2 |
 | -0.02 (up 1.5 cm) | 55.03 | -0.48 | 0.0193 | 0.693 | 1.03 |
+| -0.04 (up 3 cm) | 54.86 | -0.65 | 0.0189 | 0.685 | 0.4 |
 
 Lowering the receivers raises the fitted sun (the same outline on lower ground needs a steeper sun), so "grass sits too
 high" is ruled out in that form. The elevation moves about 1.1-1.3 deg per 1.5 cm of receiver height, and zero error
 sits near a 1.2 cm upward shift. The raised version also fits the outline slightly better (lowest chamfer, highest
 IoU), so the data itself weakly prefers it. Effective equivalents of "receivers higher": casters (chair splats)
 slightly too tall or fat, or masks slightly wide. The capture also shows how sensitive elevation is to centimetre-level
-geometry: about 1 deg per cm here.
+geometry: about 1 deg per cm here. The 3 cm run shows the curve flattens above 1.5 cm. Edge distance keeps falling with height while IoU peaks at 1.5 cm, so the two scores disagree on the best offset and the differences are under one raster cell. Height and elevation partly trade off. A joint fit of sun plus receiver offset should bound the offset (0 to 3 cm) and report the elevation spread over plausible offsets as part of the uncertainty. Selecting the offset by the fit's own score (no use of the true value) gives 54.9-55.0 deg, about 0.5-0.65 deg from truth.
