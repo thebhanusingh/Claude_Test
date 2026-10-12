@@ -848,3 +848,14 @@ Problems found and fixes (stage 3):
    14.2k non-flat Gaussians were attached. Fix: normal stats now use grown members only, and stats.json and the
    printout add a `grown` count. **Caveat for the thesis:** most cluster members are assigned by nearest-neighbour
    attachment, not by the normal test. Attachment quality needs its own check before stage 5 relies on it.
+
+**(f) rerun with corrected stats (2026-10-12, script `b883c48`, `exports/IMG_6556_clusters_chair_r30agree_v2/`).**
+Clustering is identical to (f): 2,345 regions, 14 clusters, 8,193 grown members (= 76,211 kept - 68,018 attached),
+2.6 s script time, 17.8 s wall time. **Normal spread over grown members is 12.1-20.5 deg in every cluster** (previously
+reported as 25-44 deg), inside the 30 deg region limit. Grain coherence is 0.44-0.94. The seat (35 cm, 834 grown of
+3,208) has coherence 0.44, the lowest. It is plausibly made of slats running across the seat, but that is not checked
+against the photos yet. Largest: backrest 9,095 (1,872 grown), spread 17.0 deg, coherence 0.75. Picture copied to the
+Windows repo folder as `chair_clusters_r30agree.png`.
+Open for stage 3: (1) check the 73% of members that come from attachment (for example, the normal test
+against their cluster for attached flat Gaussians, or a visual check per part); (2) validate the grain against the
+image structure tensor in a few frames; (3) repeat on a second object.
