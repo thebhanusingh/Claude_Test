@@ -30,6 +30,7 @@ problems back to when something changed.
 | `scripts/watch_nerfstudio.sh` (was `watch_600f.sh`) | Watcher: status line every 15 s to `<log>_status.log`; stdout summary every 5 min, on stage change, errors, finish, or process disappearing. Args: `PID LOG [DONE_PATTERN]`. |
 | `scripts/watch_gaussianshader.sh` (was `watch_gs.sh`) | Same idea for GaussianShader's tqdm progress bar. Args: `PID LOG TOTAL_ITERS`. |
 | 2026-09-30 repo corrections | `setup_env.sh` patches nerfstudio for COLMAP >= 3.12 option names. `make_splat.sh` gained `METHOD` / `MATCHING` / `DOWNSCALE` overrides, a split-COLMAP check (refuses to train if fewer than 80% of frames are posed) and nerfstudio-viewer-first wording. `*.log` and local artifacts are gitignored. Docs updated for gcc 15 / conda CUDA headers / WSL admin. |
+| `scripts/cluster_surfaces.py` (2026-10-12) | Stage 3 of the shadow-free splat plan: groups Gaussians into continuous surfaces from normals and neighbour links only (no colour), and gives each surface and each Gaussian a grain direction with a coherence score. Writes debug PLYs coloured by cluster and by grain angle. `--selftest` runs a synthetic ground + box + sphere scene. |
 
 ## Training runs
 
@@ -729,3 +730,61 @@ its rotate convention was measured on a 4-point test PLY before computing the an
 Claude in Chrome.
 **Observation:** the backyard has spiky white/blue splats around the treetops against the sky. They are in the original school
 splat (training's sky model), not added by the conversion. Trimming them is offered (risk: clipping branch tips).
+
+## Shadow-free splat plan (brief received 2026-10-12)
+
+The user posted a project brief: a shadow-free splat for a single dominant light (sun) and one hero object, by
+treating shadow removal as surface-aware inpainting instead of BRDF decomposition. Five stages: (1) capture + SfM +
+3DGS, (2) sun direction from cast-shadow geometry and shading, (3) surface clustering with a grain direction per
+cluster from the Gaussians' own elongation, (4) visibility toward the sun to flag shadowed Gaussians, (5) fill shadowed
+Gaussians with colour from lit Gaussians of the same cluster, propagated along the grain. Stage 3 is named as the main
+risk, to be prototyped first.
+
+### Brief vs what was already done (assessment, 2026-10-12)
+
+| Stage | Status before this brief | What is new |
+|---|---|---|
+| 1 Capture + SfM + 3DGS | Done: `make_splat_hq.sh`, splats kept in COLMAP coordinates (needed for stages 2 and 4). | Nothing. A hero-object capture (one object, sun, nothing else casting onto it) does not exist yet; IMG_6556 is chairs on grass with a shed and fence. |
+| 2 Sun estimation | Not done. GS-IR (smooth env map, no sun) and the sun + sky survey (all need varying lighting) did not give one. | All of it. The 3D shadow-mask fix already stores a per-Gaussian `shadow_frac` (multi-view SDDNet votes), so the sun can be fitted as the direction whose stage-4 visibility best reproduces those votes on the ground. Stages 2 and 4 then share one ray-casting routine. Shading gradients on one lighting condition are ambiguous with dark materials (same reason GS-IR failed), so they are a secondary cue (inferred, not tested). |
+| 3 Surface clusters + grain | Not done. The only surface model so far is the single RANSAC ground plane in `fix_splat_shadows.py --ground-only`. | All of it. Prototype added (below). |
+| 4 Visibility check | Partly: `fix_splat_shadows.py` has a z-buffer visibility test toward each camera, not toward a light. | Ray casting toward the sun. **Gap in the brief:** a blocker test only finds cast shadows. Surfaces facing away from the sun (attached shadow, e.g. the chair sides SDDNet flagged on 2026-10-08) are not blocked by anything; they need a normal-vs-sun test, which needs signed normals (orient each normal toward the cameras that see it). |
+| 5 Orientation-guided inpainting | The 3D shadow-mask fix brightens with a global gain (best version O: shadow/sunlit 0.76-0.82, cores lag, texture stays flat). | Replaces the gain with copying from lit Gaussians of the same cluster. Rounds 7-8 already showed why "same material" matters (the colour gate) and why a gain can't restore detail the shadow never recorded; the brief's rule answers both. |
+
+Risks noted for stage 3 (hypotheses to test, not results): (a) 3DGS densification also stretches Gaussians along image
+edges and silhouettes, so elongation may follow capture artefacts as well as true grain; (b) grass is volumetric, not a
+surface, so the ground will not form clean flat clusters (expected low flatness and low coherence there); (c) one 3D
+"dominant direction" per cluster is only meaningful for flat clusters; on curved ones the per-Gaussian local field is
+what stage 5 should use (seen in the synthetic sphere below).
+
+### Decisions (2026-10-12)
+- **Tooling:** plain Python with numpy + scipy (cKDTree, sparse connected components), same PLY reader as
+  `fix_splat_shadows.py`. No new conda env, no deep-learning dependency, no training. It runs on an exported PLY after
+  training, so it adds no time to the training pipeline (seconds on the synthetic scene; minutes estimated for a
+  cropped real splat, not measured yet).
+- **Clustering rule:** neighbour links between flat Gaussians (shortest/middle scale < 0.3) within 3x splat size whose
+  unsigned normals differ by < 20 deg, then connected components (min 200). Colour is not used, so a shadow edge cannot
+  split a surface. Local angle tests let curved surfaces grow while creases split.
+- **Grain:** longest axis projected into the tangent plane, weighted by opacity x in-plane elongation; structure tensor
+  per cluster (dominant direction + coherence) and per Gaussian over same-cluster neighbours.
+- **First real test:** IMG_6556 (it has masks, `shadow_frac` and baseline O for later comparison), cropped to one chair
+  with `--crop`. A dedicated hero-object capture is the user's call.
+
+### Stage 3 prototype: `scripts/cluster_surfaces.py` (2026-10-12, cloud)
+
+Synthetic check (`--selftest`): 15,613 Gaussians: 4 x 4 ground with grain along x and its left half darkened like a
+shadow, a 0.8 m box with vertical grain on the sides and grain along y on top, a sphere with grain along its meridians;
+8 deg random in-plane noise on every grain, 2 mm position noise. Result: **7 clusters, each group 100% in its own
+cluster, darkened half not split off.** Dominant grain: ground (-1.0, 0.002, 0) coherence 0.96, box sides vertical
+coherence 0.96, box top along y 0.96. Sphere: dominant (0.007, 0, 1.0) coherence 0.66 (meridians all lean vertical, so a
+single direction is only a summary); per-Gaussian local grain error vs the true meridian: median 1.7 deg (ground 1.4 deg).
+Runtime 0.2 s. `--crop` checked on the same scene (box only).
+
+Problem found and fix:
+1. **First selftest "failed" on the sphere.** The test expected low coherence on a sphere, but meridian directions share
+   a vertical component, so the cluster tensor gave 0.66. The expectation was wrong, not the code. Fix: the check now
+   measures the per-Gaussian local field against the true meridians (median 1.7 deg).
+
+Next (laptop, no training, needs the user's go-ahead): run on `exports/IMG_6556/splat.ply` cropped around one chair,
+view `clusters_debug.ply` and `orientation_debug.ply`, and record whether seat, back and legs form separate clusters,
+whether the shadow on the chair splits anything, and how flat/coherent the grass is. Planned metric for grain without
+labels: compare each cluster's projected grain with the image structure-tensor direction in a few frames.
