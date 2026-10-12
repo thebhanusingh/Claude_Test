@@ -1063,7 +1063,7 @@ moved down, in scene units (0.02 = about 1.5 cm):
 | +0.02 (down 1.5 cm) | 57.30 | +1.79 | 0.0198 | 0.680 | 1.76 |
 | 0 | 56.30 | +0.79 | 0.0200 | - | 1.2 |
 | -0.02 (up 1.5 cm) | 55.03 | -0.48 | 0.0193 | 0.693 | 1.03 |
-| -0.04 (up 3 cm) | 54.86 | -0.65 | 0.0189 | 0.685 | 0.4 |
+| -0.04 (up 3 cm) | 54.86 | -0.65 | 0.0189 | 0.685 | 0.4 (but hold-out halves 56.0 / 54.0) |
 
 Lowering the receivers raises the fitted sun (the same outline on lower ground needs a steeper sun), so "grass sits too
 high" is ruled out in that form. The elevation moves about 1.1-1.3 deg per 1.5 cm of receiver height, and zero error
