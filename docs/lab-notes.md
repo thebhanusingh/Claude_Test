@@ -909,7 +909,7 @@ on the laptop.
 
 **Ground truth.** The user supplied a sun calculator readout: altitude 55.51 deg, azimuth 172.57 deg (sunrise 07:16:00,
 culmination 13:14:48, sunset 19:13:08). The video metadata confirms the time and place: creation_time
-2026-09-28T16:58:11Z (12:58:11 EDT), GPS +32.0482 -081.0601. An independent NOAA calculation gives 55.5 / 172.6 deg.
+2026-09-28T16:58:11Z (12:58:11 EDT), GPS +32.0482 -081.0601. An independent NOAA calculation gives 55.5 / 172.6 deg. The user notes the readout may be off by about 0.1 deg; that is well below the fit's spread (about +/-2 deg), so it does not affect any conclusion here, and errors under about 0.1 deg are not meaningful.
 
 **First run on IMG_6556** (`--centre 0.713 1.091 0.464 --radius 3.0`, out `exports/IMG_6556_sun/`, 10 min 47 s, almost
 all of it the vote pass over about 325 frames with all 2.9M opaque Gaussians in the z-buffer):
