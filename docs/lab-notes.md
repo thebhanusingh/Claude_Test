@@ -975,7 +975,7 @@ azimuth without a north reference.
 
 Reading: the -0.5 deg of the best run is partly luck. Its half fits land at 56-57 deg and the five settings spread over
 55-58 deg, so the method is good to about +/-2 deg on this capture, with a slight high bias (most runs are 1.5-2.5 deg
-high). Possible causes: the ground plane is fitted to grass tops rather than soil (shadows fall a few cm lower), the
+high). The user notes the grass was not a capture target in IMG_6556, so its reconstruction quality varies; the ground receivers sit on it. Possible causes: the ground plane is fitted to grass tops rather than soil (shadows fall a few cm lower), the
 masks may be slightly fat, or the plane is not perfectly level. Still one ground-truth sample.
 
 ### Stage 2: chair self-shadow as extra evidence (refinement 3, 2026-10-12, cloud)
