@@ -1004,3 +1004,29 @@ Planned self-shadow runs (laptop, tmux `work`, `python -u`, one command at a tim
 4. `exports/IMG_6556_sun_self_only`: step 2 with `--self-weight 1.0`, i.e. the chair's own shadow alone (copy both vote files).
 Report per run vs 55.51 deg: elevation, error, score, ground and object IoU, uncertainty, hold-out halves, and the
 object observed / predicted / attached shadow shares from `sun.json`.
+
+**Self-shadow results (laptop, 2026-10-12, `scripts/fit_sun_self.py`, an untracked laptop script that reuses
+`fit_sun.py`; same idea as `--self-shadow`).** True elevation 55.51 deg:
+
+| run | elevation | error | uncertainty | ground IoU | chair IoU |
+|---|---|---|---|---|---|
+| ground shadow only (chair casters, score radius 1.2) | 55.00 | -0.51 | 1.0 | 0.69 | - |
+| chair self-shadow only | 29.25 (wrong azimuth too) | fails | - | - | 0.39 at its own best |
+| combined | 55.50 | -0.01 | 2.5 | 0.69 | 0.30 |
+| combined, first version (a part could shadow itself through its thickness) | 55.25 | -0.26 | - | - | - |
+
+The combined hit is mostly luck: self-shadow alone cannot find the sun, and it widens the uncertainty from 1.0 to
+2.5 deg. Shadows cast by one part onto another agree well (legs, under the seat and arms). The backrest fails: the masks
+call nearly all of it lit, front and back faces alike, while the geometry puts the side away from the sun in shadow.
+Likely cause: the slats are 2-3 cm thick, but the vote z-buffer tolerance (`--z-tol 0.03`, relative) is about 7 cm at
+that distance, so back-face Gaussians count as visible whenever the front face is and inherit its lit vote. Fix needed
+before self-shadow can help: front/back-aware votes (tighter depth test, and only count a view when the Gaussian's
+outward normal faces that camera). Decision: the ground shadow stays the sun estimate; self-shadow is parked until
+the votes are fixed.
+
+Literature notes from this round: Wang & Samaras (known shape, shading plus cast shadows), Ling et al. ICCV 2009
+(L1-regularised least squares with cast shadows), Nillius & Eklundh, and outdoor relightable splat methods GaRe
+(arXiv 2507.20512), OSDR-GS (IJCAI 2025) and ROSGS, which keep an explicit sun and ray-traced visibility fitted to
+photos. None found estimates the sun from shadows alone as done here. Candidate next steps: (1) score the shadow
+boundary (edge distance) instead of area IoU, (2) a shading term on sun-lit chair faces, (3) front/back-aware
+self-shadow votes, (4) continuous refinement after the grid search.
