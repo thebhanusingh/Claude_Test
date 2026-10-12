@@ -924,3 +924,31 @@ Problem found and fix (stage 2):
    nothing until the end. Fix: run with `python -u`; the script now prints progress every 25 frames. Optional
    `--zbuf-radius` limits the view z-buffer to nearby Gaussians for speed.
 Next: sensitivity runs (`--cell 0.03`, `--radius 2.0`, `--occluder-min` about 11 cm) and the azimuth relative to the camera path.
+
+**Sensitivity run: `--cell 0.03`** (votes reused, 162 s): elevation 58.00 deg, azimuth 148.25 deg, IoU 0.098, uncertainty
+5.45 deg (245 tied directions). Error vs truth +2.5 deg, inside its own uncertainty. The coarser cells widen the tiny false
+shadows from grass and floaters, so the score drops and the uncertainty grows; 2 cm stays the default.
+
+### Stage 2 refinements from the literature (survey, 2026-10-12)
+The user asked how to cut the sun-fit error. Options found, ranked by fit to our setup (none implemented yet):
+1. **Soft visibility (opacity transmittance) instead of a binary shadow map.** ShadowGS (arXiv 2601.00939) casts a ray
+   from each Gaussian toward the sun and multiplies (1 - alpha) over the Gaussians it hits, as in 3DGRT/R3DG ray tracing.
+   For us: thin, low-opacity grass and floaters would stop casting full-strength false shadows. Scoring changes to the
+   continuous vote fraction instead of thresholded IoU. ShadowGS takes the sun from satellite metadata; it does not
+   estimate it.
+2. **Object-shadow association.** Instance Shadow Detection / LISA (Wang et al., CVPR 2020) pairs each shadow with its
+   casting object and predicts light direction. Our 3D equivalent comes for free from stage 3: use only the chair's
+   clusters as occluders, and score only receivers near the chair's predicted shadow. This targets the clutter that
+   currently drags IoU to 0.14.
+3. **Shadow-tip correspondences.** Classical light-from-shadows geometry (e.g. Cao & Foroosh, CVPR 2005): each
+   object point / shadow point pair, such as a leg tip and its shadow tip, defines one sun ray, combined robustly
+   (RANSAC). This gives an independent geometric estimate to cross-check the IoU search.
+4. **Combine cues with a prior.** Lalonde, Efros & Narasimhan (ICCV 2009, IJCV 2012) combine shadows, shading of
+   vertical surfaces and the sky in a probabilistic sun estimate. For us: a Lambertian shading cue on the lit,
+   same-material stage-3 clusters (brightness vs n . s) as a second likelihood, multiplied with the shadow likelihood.
+   This would mainly sharpen elevation.
+5. **Metadata prior.** Phone videos carry time and GPS (IMG_6556 does), which fixes elevation and true azimuth with
+   no added pipeline time. The shadow fit then only has to find the scene's north (a 1D search), and stage 2 becomes a
+   check, not the sole estimate.
+Caveat for claims of improvement: there is one ground-truth sample so far (55.51 deg). More test cases are needed
+before reporting an error rate, for example separate fits on the other chairs in IMG_6556 and future captures with metadata.
