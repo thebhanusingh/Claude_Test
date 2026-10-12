@@ -995,3 +995,12 @@ Self-test extended: 10,000 receivers on the box's top and side faces with random
 camera directions (4 sign errors), 10% label noise. Fitted 38.25 / 127.00 vs true 38 / 127, **error 0.27 deg**, chair
 IoU 0.78; the ground-only case still gives 0.35 deg.
 Caveat: SDDNet is trained on cast shadows, and how it marks self-shaded chair sides decides how much this helps.
+
+Planned self-shadow runs (laptop, tmux `work`, `python -u`, one command at a time, nothing deleted or trained):
+1. Fetch, then `python -u scripts/fit_sun.py --selftest --out /tmp/sun_selftest`: two fits (0.35 and 0.27 deg), PASSED.
+2. `exports/IMG_6556_sun_self_s12`: copy in `exports/IMG_6556_sun/votes.npz`, then the chair-only score-radius 1.2
+   command plus `--self-shadow --zbuf-radius 3.0`. A new vote pass for the chair Gaussians writes `votes_self.npz`.
+3. `exports/IMG_6556_sun_self_s18`: same with `--score-radius 1.8` (copy both vote files in first).
+4. `exports/IMG_6556_sun_self_only`: step 2 with `--self-weight 1.0`, i.e. the chair's own shadow alone (copy both vote files).
+Report per run vs 55.51 deg: elevation, error, score, ground and object IoU, uncertainty, hold-out halves, and the
+object observed / predicted / attached shadow shares from `sun.json`.
