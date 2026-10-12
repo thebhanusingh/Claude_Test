@@ -1071,3 +1071,27 @@ sits near a 1.2 cm upward shift. The raised version also fits the outline slight
 IoU), so the data itself weakly prefers it. Effective equivalents of "receivers higher": casters (chair splats)
 slightly too tall or fat, or masks slightly wide. The capture also shows how sensitive elevation is to centimetre-level
 geometry: about 1 deg per cm here. The 3 cm run shows the curve flattens above 1.5 cm. Edge distance keeps falling with height while IoU peaks at 1.5 cm, so the two scores disagree on the best offset and the differences are under one raster cell. Height and elevation partly trade off. A joint fit of sun plus receiver offset should bound the offset (0 to 3 cm) and report the elevation spread over plausible offsets as part of the uncertainty. Selecting the offset by the fit's own score (no use of the true value) gives 54.9-55.0 deg, about 0.5-0.65 deg from truth.
+
+**Joint fit of sun + receiver offset (laptop, 2026-10-12, `fit_sun_edges.py --fit-shift LO HI STEP`, 3 min 49 s).**
+For each receiver offset from 6 cm up to 2.3 cm down, in 0.75 cm steps, it solves for the sun, keeps the offset with the
+lowest outline (chamfer) distance, and refines the sun there. The true value is never used.
+
+| receiver offset | elevation | chamfer |
+|---|---|---|
+| up 6.0 cm | 53.75 | 0.0200 |
+| up 3.0 cm | 54.75 | 0.0194 |
+| **up 2.3 cm (picked)** | 55.00 | 0.0193 |
+| up 1.5 cm | 55.00 | 0.0198 |
+| up 0.8 cm | 55.75 | 0.0196 |
+| as is | 56.75 | 0.0205 |
+| down 1.5 cm | 57.25 | 0.0199 |
+| down 2.3 cm | 56.25 | 0.0195 |
+
+Final: offset up 2.3 cm, **elevation 55.08 deg vs true 55.51 (error -0.43 deg)**, azimuth 145.1 deg (scene frame);
+hold-out halves 55.75 / 55.25. Caveat: the offset is only weakly determined. The score varies by about 6% across the
+scan and the profile is bumpy (down 2.3 cm nearly ties the winner). Reported result for IMG_6556: **55 +/- 1 deg**.
+More captures will show whether the offset is constant (fix it once) or scene-specific (keep the joint fit).
+
+Stage 2 progression on IMG_6556 (true 55.51 deg): area IoU with all casters 57.0 (+1.5); chair-only casters 55.0
+(-0.5, unstable across settings); boundary score 56.3 (+0.8, stable); boundary + fitted receiver offset 55.08 (-0.43,
+halves 55.25 / 55.75). Self-shadow is parked (thin-slat vote leak).
