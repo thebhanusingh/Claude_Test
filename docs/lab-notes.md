@@ -952,3 +952,46 @@ The user asked how to cut the sun-fit error. Options found, ranked by fit to our
    check, not the sole estimate.
 Caveat for claims of improvement: there is one ground-truth sample so far (55.51 deg). More test cases are needed
 before reporting an error rate, for example separate fits on the other chairs in IMG_6556 and future captures with metadata.
+
+### Stage 2: chair-only casters (refinement 2, laptop, 2026-10-12)
+The user pointed out that the grass is lit mostly by diffuse skylight, so its blades are not real sun casters. Commit
+`d7b68f1` added `--occluder-labels` (only Gaussians in a stage-3 cluster cast, here
+`exports/IMG_6556_clusters_chair_r30agree_v3/clusters.npz`) and `--score-radius` (score only ground receivers within that
+distance of the chair's footprint). Self-test unchanged (0.35 deg). Results vs the true elevation 55.51 deg:
+
+| run | elevation | error | IoU | uncertainty | hold-out half fits |
+|---|---|---|---|---|---|
+| all casters, radius 3.0 | 57.00 | +1.5 | 0.14 | 3.1 | 56.75 / 56.5 |
+| all casters, cell 0.03 | 58.00 | +2.5 | 0.10 | 5.5 | 58.0 / 58.0 (4.2 deg apart in azimuth) |
+| all casters, radius 2.0 | 57.50 | +2.0 | 0.24 | 2.0 | 57.5 / 58.0 |
+| chair only, score radius 1.8 (`exports/IMG_6556_sun_chair`) | 57.75 | +2.2 | 0.67 | 1.7 | 57.25 / 56.75 |
+| chair only, score radius 1.2 (`exports/IMG_6556_sun_chair_s12`) | 55.00 | -0.5 | 0.69 | 1.0 | 57.0 / 56.0 |
+
+With grass excluded, the IoU rises from 0.14 to about 0.69. In `sun_fit.png` the predicted chair shadow matches the
+observed one: seat, back and arm outlines and the lit gap under the seat. The only misses are a thin rim where the
+prediction is slightly fatter and a leg tip about 10 cm too long. Chair-only runs take 1-3 min (the first full run took
+10.8 min). Fitted azimuth 144.75 deg in scene coordinates; it can't be checked against the true 172.6 deg compass
+azimuth without a north reference.
+
+Reading: the -0.5 deg of the best run is partly luck. Its half fits land at 56-57 deg and the five settings spread over
+55-58 deg, so the method is good to about +/-2 deg on this capture, with a slight high bias (most runs are 1.5-2.5 deg
+high). Possible causes: the ground plane is fitted to grass tops rather than soil (shadows fall a few cm lower), the
+masks may be slightly fat, or the plane is not perfectly level. Still one ground-truth sample.
+
+### Stage 2: chair self-shadow as extra evidence (refinement 3, 2026-10-12, cloud)
+The user asked to also use the chair's own shadow. `--self-shadow` (needs `--occluder-labels`) makes the chair's
+clustered Gaussians receivers too:
+- Mask votes for them come from the same multi-view pass, cached in `<out>/votes_self.npz`. The pass also sums the unit
+  directions to the cameras that see each Gaussian.
+- Normal = its cluster's dominant normal (grown members), signed to face those cameras. Stage 4 needs the same signed
+  normals.
+- Predicted shadow = **attached** (n . s < 0, facing away from the sun) OR **cast by another chair part** (the same
+  orthographic shadow map built from the chair only, with `--self-eps 0.05` and no dilation, so a slanted slat does not
+  shadow its own neighbours: with 2 cm cells and 1-cell dilation, a 2 cm margin falsely shadows any surface more than
+  about 27 deg off facing the sun).
+- Score = (1 - `--self-weight`) x ground IoU + `--self-weight` x chair IoU (default 0.5); both IoUs are reported, and
+  the hold-out splits both receiver sets.
+Self-test extended: 10,000 receivers on the box's top and side faces with random normal signs, signed back by noisy
+camera directions (4 sign errors), 10% label noise. Fitted 38.25 / 127.00 vs true 38 / 127, **error 0.27 deg**, chair
+IoU 0.78; the ground-only case still gives 0.35 deg.
+Caveat: SDDNet is trained on cast shadows, and how it marks self-shaded chair sides decides how much this helps.

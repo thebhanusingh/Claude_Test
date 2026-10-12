@@ -19,6 +19,12 @@ share it.
    angular radius of fine-grid directions within --tie of the best IoU. Hold-out: refit on each half of the receivers
    (split through the centre) and report how far the two half-fits land from each other and how each scores on the
    other half.
+4. Self-shadow (--self-shadow, needs --occluder-labels): the object's own Gaussians are receivers too. Their mask votes
+   are collected the same way (cached in <out>/votes_self.npz) together with the summed direction to the cameras that
+   see each one, which signs its cluster's normal (it must face those cameras). A chair Gaussian is predicted in shadow
+   when it faces away from the sun (attached shadow, n.s < 0) or another part of the object blocks it (same shadow
+   map, built from the object only, with --self-eps and --self-dilate so a surface does not shadow itself). The score
+   becomes (1 - --self-weight) x ground IoU + --self-weight x object IoU; both IoUs are reported.
 
 Usage:
   fit_sun.py --ply exports/IMG_6556/splat.ply --colmap data/IMG_6556/colmap/sparse/0_refined \
@@ -76,16 +82,40 @@ def iou(pred, obs):
     return float((pred & obs).sum() / u) if u else 0.0
 
 
-def search(occ, rec, obs, frame, args, centre_el=None, centre_az=None):
-    """Coarse-to-fine grid search. Returns best (elev, azim, iou), fine-grid samples and coarse map."""
+def make_score(occ, rec, obs, args, chair=None, sel=None, sel_c=None):
+    """Score function s -> (combined, ground IoU, object IoU). chair = (occ_c, rec_c, normal_c, obs_c) or None;
+    sel / sel_c restrict the ground / object receivers (hold-out halves)."""
+    if sel is not None:
+        rec, obs = rec[sel], obs[sel]
+    if chair is not None:
+        occ_c, rec_c, n_c, obs_c = chair
+        if sel_c is not None:
+            rec_c, n_c, obs_c = rec_c[sel_c], n_c[sel_c], obs_c[sel_c]
+    w = args.self_weight if chair is not None else 0.0
+
+    def score(s):
+        g = iou(predict(occ, rec, s, args.cell, args.dilate, args.eps), obs) if w < 1 else 0.0
+        if chair is None:
+            return g, g, None
+        c = iou(predict_self(occ_c, rec_c, n_c, s, args), obs_c)
+        return (1 - w) * g + w * c, g, c
+    return score
+
+
+def predict_self(occ_c, rec_c, n_c, s, args):
+    """Object receivers: attached shadow (facing away from the sun) or cast by another part of the object."""
+    return (n_c @ s < 0) | predict(occ_c, rec_c, s, args.cell, args.self_dilate, args.self_eps)
+
+
+def search(score, frame, args):
+    """Coarse-to-fine grid search. Returns best (elev, azim, score), fine-grid samples and coarse map."""
     def grid(els, azs):
         out = []
         for el in els:
             if not 1 <= el <= 89:
                 continue
             for az in azs:
-                out.append((el, az % 360, iou(predict(occ, rec, sun_vec(el, az, frame), args.cell, args.dilate,
-                                                      args.eps), obs)))
+                out.append((el, az % 360, score(sun_vec(el, az, frame))[0]))
         return out
 
     coarse_els, coarse_azs = np.arange(5, 86, 5.0), np.arange(0, 360, 5.0)
@@ -111,6 +141,7 @@ def collect_votes(xyz, opacity, rec_idx, args):
     rec = xyz[rec_idx]
     shadow = np.zeros(len(rec_idx), np.int32)
     seen = np.zeros(len(rec_idx), np.int32)
+    toward = np.zeros((len(rec_idx), 3))  # summed unit vectors receiver -> camera over the views that see it
     occl_mask = opacity > args.opaque
     if args.zbuf_radius:  # view occluders far from the region rarely matter and dominate the run time
         occl_mask &= np.linalg.norm(xyz - xyz[rec_idx].mean(0), axis=1) < args.zbuf_radius
@@ -147,14 +178,17 @@ def collect_votes(xyz, opacity, rec_idx, args):
         front, ur = front[vis], ur[vis]
         shadow[front] += mask[ur[:, 1].astype(int), ur[:, 0].astype(int)] > 127
         seen[front] += 1
+        v = -R.T @ fr["t"] - rec[front]
+        toward[front] += v / np.maximum(np.linalg.norm(v, axis=1, keepdims=True), 1e-12)
         used += 1
         if used % 25 == 0:
             print(f"  votes: {used} frames done ({fr['name']})", flush=True)
     print(f"votes from {used} masked frames: receivers seen >= {args.min_views}x: {(seen >= args.min_views).sum():,}")
-    return shadow, seen
+    return shadow, seen, toward
 
 
-def fit(xyz, opacity, up, offset, tol, centre, args, votes=None):
+def fit(xyz, opacity, up, offset, tol, centre, args, votes=None, chair=None):
+    """chair: None, or (idx, signed normals (N,3), shadow votes, seen votes) for --self-shadow."""
     t0 = time.time()
     height = xyz @ up + offset
     near = np.linalg.norm(xyz - centre, axis=1) < args.radius
@@ -169,7 +203,7 @@ def fit(xyz, opacity, up, offset, tol, centre, args, votes=None):
     print(f"{len(rec_idx):,} ground receivers within {args.radius} of the centre, {len(occ):,} occluders "
           f"within {occ_r:g} (opacity > {args.opaque}, > {args.occluder_min} above the plane)")
     if votes is None:
-        shadow, seen = collect_votes(xyz, opacity, rec_idx, args)
+        shadow, seen, _ = collect_votes(xyz, opacity, rec_idx, args)
         np.savez_compressed(args.out / "votes.npz", rec_idx=rec_idx, shadow=shadow, seen=seen)
     else:
         shadow, seen = votes
@@ -184,39 +218,83 @@ def fit(xyz, opacity, up, offset, tol, centre, args, votes=None):
     if len(occ) > args.max_occluders:
         occ = occ[np.random.default_rng(0).choice(len(occ), args.max_occluders, replace=False)]
 
+    cdata = None
+    if chair is not None:
+        c_idx, c_n, c_shadow, c_seen = chair
+        ck = c_seen >= args.min_views
+        c_obs = c_shadow[ck] / c_seen[ck] >= 0.5
+        occ_c = xyz[c_idx]
+        cdata = (occ_c, xyz[c_idx[ck]], c_n[ck], c_obs)
+        print(f"self-shadow: {ck.sum():,} object receivers used, {c_obs.mean() * 100:.1f}% observed in shadow, "
+              f"weight {args.self_weight}")
+
     frame = plane_frame(up)
-    (el, az, best), samples, cmap = search(occ, rec, obs, frame, args)
+    score = make_score(occ, rec, obs, args, cdata)
+    (el, az, best), samples, cmap = search(score, frame, args)
     s = sun_vec(el, az, frame)
+    _, g_iou, c_iou = score(s)
     tied = [sun_vec(e, a, frame) for e, a, v in samples if v >= best - args.tie]
     unc = max(angle_between(s, t) for t in tied)
-    print(f"best sun: elevation {el:.2f} deg, azimuth {az:.2f} deg, IoU {best:.3f} "
-          f"(uncertainty radius {unc:.2f} deg over {len(tied)} tied directions), {time.time() - t0:.0f} s")
+    print(f"best sun: elevation {el:.2f} deg, azimuth {az:.2f} deg, score {best:.3f} (ground IoU {g_iou:.3f}"
+          + (f", object IoU {c_iou:.3f}" if c_iou is not None else "")
+          + f"; uncertainty radius {unc:.2f} deg over {len(tied)} tied directions), {time.time() - t0:.0f} s")
 
     # hold-out: split receivers through the centre along the sun's horizontal direction's normal
     _, e1, e2 = frame
-    side = (rec - centre) @ np.cross(up, np.cos(np.radians(az)) * e1 + np.sin(np.radians(az)) * e2) > 0
+    split = np.cross(up, np.cos(np.radians(az)) * e1 + np.sin(np.radians(az)) * e2)
+    side = (rec - centre) @ split > 0
+    side_c = (cdata[1] - centre) @ split > 0 if cdata is not None else None
     halves = []
-    for h in (side, ~side):
+    for h, hc in ((side, side_c), (~side, None if side_c is None else ~side_c)):
         if obs[h].sum() < 20 or obs[~h].sum() < 20:
             halves = None
             break
-        (hel, haz, hbest), _, _ = search(occ, rec[h], obs[h], frame, args)
+        (hel, haz, hbest), _, _ = search(make_score(occ, rec, obs, args, cdata, h, hc), frame, args)
         hs = sun_vec(hel, haz, frame)
-        other = iou(predict(occ, rec[~h], hs, args.cell, args.dilate, args.eps), obs[~h])
+        other = make_score(occ, rec, obs, args, cdata, ~h, None if hc is None else ~hc)(hs)[0]
         halves.append(dict(elevation=hel, azimuth=haz, iou_fit=round(hbest, 4), iou_other_half=round(other, 4),
                            deg_from_full_fit=round(angle_between(hs, s), 2)))
     if halves:
         d = angle_between(sun_vec(halves[0]["elevation"], halves[0]["azimuth"], frame),
                           sun_vec(halves[1]["elevation"], halves[1]["azimuth"], frame))
-        print(f"hold-out: half fits {d:.2f} deg apart; IoU on the other half {halves[0]['iou_other_half']:.3f} / "
+        print(f"hold-out: half fits {d:.2f} deg apart; score on the other half {halves[0]['iou_other_half']:.3f} / "
               f"{halves[1]['iou_other_half']:.3f}")
     pred = predict(occ, rec, s, args.cell, args.dilate, args.eps)
+    extra = {}
+    if cdata is not None:
+        pc = predict_self(cdata[0], cdata[1], cdata[2], s, args)
+        extra = dict(object_iou=round(c_iou, 4), object_receivers=int(len(cdata[1])),
+                     object_observed_shadow_share=round(float(cdata[3].mean()), 4),
+                     object_predicted_shadow_share=round(float(pc.mean()), 4),
+                     object_attached_share=round(float((cdata[2] @ s < 0).mean()), 4))
     return dict(sun_world=s.round(5).tolist(), elevation_deg=round(el, 2), azimuth_deg=round(az, 2),
                 azimuth_ref=dict(e1=frame[1].round(4).tolist(), e2=frame[2].round(4).tolist()),
-                up=up.round(5).tolist(), iou=round(best, 4), uncertainty_deg=round(unc, 2),
+                up=up.round(5).tolist(), score=round(best, 4), iou=round(g_iou, 4), **extra,
+                uncertainty_deg=round(unc, 2),
                 receivers=int(len(rec)), observed_shadow_share=round(float(obs.mean()), 4),
                 predicted_shadow_share=round(float(pred.mean()), 4), occluders=int(occ_mask.sum()),
                 holdout=halves, seconds=round(time.time() - t0, 1)), (rec, obs, pred, cmap)
+
+
+def object_receivers(xyz, opacity, centre, args):
+    """Clustered (object) Gaussians near the centre and each one's cluster normal (unsigned): the dominant axis of
+    the grown members' normals, which is steadier than a single splat's normal."""
+    z = np.load(args.occluder_labels)
+    labels, grown, normal = z["labels"], z["grown"], z["normal"]
+    idx = np.flatnonzero((labels >= 0) & (opacity > args.opaque) &
+                         (np.linalg.norm(xyz - centre, axis=1) < args.radius))
+    cn = np.zeros((labels.max() + 1, 3))
+    for c in range(len(cn)):
+        m = (labels == c) & grown
+        if not m.any():
+            m = labels == c
+        cn[c] = np.linalg.eigh(normal[m].T @ normal[m])[1][:, 2]
+    return idx, cn[labels[idx]]
+
+
+def sign_normals(n, toward):
+    """Flip each normal to face the cameras that saw it (surfaces are only seen from their front side)."""
+    return n * np.where(np.einsum("ij,ij->i", n, toward) < 0, -1.0, 1.0)[:, None]
 
 
 def plot(rec, obs, pred, up, out):
@@ -265,12 +343,41 @@ def selftest(args):
     seen = np.full(len(rec_idx), 10)
     shadow = np.where(noisy, 8, 2)
     args.radius = 10.0  # every synthetic ground Gaussian is a receiver, matching the votes
-    res, extra = fit(xyz, opacity, up, offset, tol, np.zeros(3), args, votes=(shadow, seen))
-    err = angle_between(np.array(res["sun_world"]), s)
-    print(f"true sun: elevation {true_el}, azimuth {true_az}; fitted {res['elevation_deg']}, {res['azimuth_deg']}; "
-          f"error {err:.2f} deg")
-    plot(*extra[:3], up, args.out)
-    ok = err < 2.0 and res["holdout"] is not None
+    ok = True
+    for self_shadow in (False, True):
+        chair, xyz_t, op_t = None, xyz, opacity
+        if self_shadow:
+            # object receivers: points on the box's top and four side faces, outward normals, the pole casts onto them
+            lo, hi = np.array([-0.4, -0.3, 0.05]), np.array([0.4, 0.3, 0.9])
+            faces = []
+            for ax in range(3):
+                for side in (0, 1):
+                    if ax == 2 and side == 0:
+                        continue
+                    pts = rng.uniform(lo, hi, (2000, 3))
+                    pts[:, ax] = (lo, hi)[side][ax]
+                    nn = np.zeros((2000, 3))
+                    nn[:, ax] = 1.0 if side else -1.0
+                    faces.append((pts, nn))
+            fp, fn = np.concatenate([f[0] for f in faces]), np.concatenate([f[1] for f in faces])
+            fobs = predict_self(np.r_[box, pole, fp], fp, fn, s, argparse.Namespace(
+                cell=args.cell / 2, self_dilate=args.self_dilate, self_eps=args.self_eps))
+            fnoisy = fobs ^ (rng.random(len(fobs)) < 0.10)
+            xyz_t, op_t = np.r_[xyz, fp], np.ones(len(xyz) + len(fp))
+            # random sign flips, as cluster normals are unsigned; the camera directions sign them back
+            fsign = sign_normals(fn * rng.choice([-1.0, 1.0], (len(fn), 1)), fn + rng.normal(0, 0.3, fn.shape))
+            chair = (np.r_[np.arange(len(xyz) - len(box) - len(pole), len(xyz)), np.arange(len(xyz), len(xyz_t))],
+                     np.r_[np.zeros((len(box) + len(pole), 3)), fsign], np.r_[np.zeros(len(box) + len(pole)),
+                     np.where(fnoisy, 8, 2)], np.r_[np.zeros(len(box) + len(pole)), np.full(len(fp), 10)])
+            print(f"self-shadow selftest: {len(fp):,} box-face receivers, {fobs.mean() * 100:.0f}% truly shaded, "
+                  f"sign errors after camera signing: {(np.einsum('ij,ij->i', fsign, fn) < 0).sum()}")
+        res, extra = fit(xyz_t, op_t, up, offset, tol, np.zeros(3), args, votes=(shadow, seen), chair=chair)
+        err = angle_between(np.array(res["sun_world"]), s)
+        print(f"true sun: elevation {true_el}, azimuth {true_az}; fitted {res['elevation_deg']}, {res['azimuth_deg']}; "
+              f"error {err:.2f} deg" + (f", object IoU {res['object_iou']}" if self_shadow else ""))
+        if not self_shadow:
+            plot(*extra[:3], up, args.out)
+        ok &= err < 2.0 and res["holdout"] is not None and (not self_shadow or res["object_iou"] > 0.6)
     print("SELFTEST", "PASSED" if ok else "FAILED")
     return 0 if ok else 1
 
@@ -304,6 +411,13 @@ def main():
     ap.add_argument("--zbuf-radius", type=float, default=0.0,
                     help="if > 0, only opaque Gaussians within this distance of the receivers build the view z-buffer "
                          "(faster; the first IMG_6556 run with all 2.9M took 15+ min)")
+    ap.add_argument("--self-shadow", action="store_true",
+                    help="also score the object's own shadow (attached + cast onto itself); needs --occluder-labels")
+    ap.add_argument("--self-weight", type=float, default=0.5, help="weight of the object IoU in the score")
+    ap.add_argument("--self-eps", type=float, default=0.05,
+                    help="depth margin for the object's shadow map (larger than --eps so a slanted surface does not "
+                         "shadow its own neighbours)")
+    ap.add_argument("--self-dilate", type=int, default=0, help="dilation of the object's shadow map in cells")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -330,7 +444,22 @@ def main():
         if np.array_equal(v["rec_idx"], rec_now):
             votes = (v["shadow"], v["seen"])
             print(f"reusing votes from {vpath}")
-    res, extra = fit(xyz, opacity, up, offset, tol, centre, args, votes=votes)
+    chair = None
+    if args.self_shadow:
+        if not args.occluder_labels:
+            ap.error("--self-shadow needs --occluder-labels")
+        c_idx, c_n = object_receivers(xyz, opacity, centre, args)
+        spath = args.out / "votes_self.npz"
+        v = np.load(spath) if spath.exists() else None
+        if v is not None and np.array_equal(v["rec_idx"], c_idx):
+            print(f"reusing object votes from {spath}")
+            c_shadow, c_seen, c_toward = v["shadow"], v["seen"], v["toward"]
+        else:
+            print(f"collecting votes for {len(c_idx):,} object Gaussians")
+            c_shadow, c_seen, c_toward = collect_votes(xyz, opacity, c_idx, args)
+            np.savez_compressed(spath, rec_idx=c_idx, shadow=c_shadow, seen=c_seen, toward=c_toward)
+        chair = (c_idx, sign_normals(c_n, c_toward), c_shadow, c_seen)
+    res, extra = fit(xyz, opacity, up, offset, tol, centre, args, votes=votes, chair=chair)
     np.save(args.out / "score_map.npy", extra[3])
     res["params"] = {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()}
     (args.out / "sun.json").write_text(json.dumps(res, indent=1))
