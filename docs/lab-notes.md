@@ -1030,3 +1030,26 @@ Literature notes from this round: Wang & Samaras (known shape, shading plus cast
 photos. None found estimates the sun from shadows alone as done here. Candidate next steps: (1) score the shadow
 boundary (edge distance) instead of area IoU, (2) a shading term on sun-lit chair faces, (3) front/back-aware
 self-shadow votes, (4) continuous refinement after the grid search.
+
+### Stage 2: shadow-boundary scoring (refinement 4, laptop, 2026-10-12)
+`scripts/fit_sun_edges.py` (laptop, untracked; reuses `fit_sun.predict`, `plane_frame`, `sun_vec`). Same chair casters
+and ground votes as `exports/IMG_6556_sun_chair`. It rasterises the observed and predicted ground shadow, scores the
+symmetric chamfer distance between their boundaries, searches coarse-to-fine, polishes with Nelder-Mead, and refits
+on two halves. True elevation 55.51 deg (+/-0.1):
+
+| score | score radius | elevation | error | uncertainty | half fits |
+|---|---|---|---|---|---|
+| area IoU | 1.2 | 55.00 | -0.51 | 1.0 | 57.0 / 56.0 |
+| area IoU | 1.8 | 57.75 | +2.24 | 1.7 | 57.25 / 56.75 |
+| boundary | 1.2 | 56.30 | +0.79 | 1.2 | 57.25 / 56.0 |
+| boundary | 1.8 | 56.98 | +1.47 | 1.4 | 57.5 / 57.25 |
+
+Outlines agree to 0.020 units (about 1.5 cm, one raster cell). Changing the score radius now moves the answer by
+0.7 deg instead of 2.75 deg, so boundary scoring is **more stable, not more accurate**. The error is almost always
+positive (0.8-2 deg high), which points to a systematic input bias rather than noise. Candidates, in test order:
+1. ground plane fitted to grass tops, so modelled shadows come out shorter and the sun too high (test: shift the
+   plane down 1-3 cm);
+2. fuzzy chair top edge (the opposite effect);
+3. mask bias (fat or thin SDDNet masks);
+4. plane tilt (the plane's up direction vs the camera up: 0.998, about 3.6 deg).
+More captures with known times will separate a constant bias from scene noise.
