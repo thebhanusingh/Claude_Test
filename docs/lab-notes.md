@@ -895,3 +895,32 @@ the previous command had been recalled from shell history at the prompt, and the
 gave `syntax error near unexpected token '}'`. The user spotted it in the visible terminal. Fix: clear the prompt line
 (C-u) before typing, never send while the pane is busy, and wait for each command's done marker. Typing in that pane while
 Claude works gets wiped, so use a second tmux window (Ctrl-b c) for manual commands.
+
+### Stage 2: sun direction (2026-10-12)
+
+`scripts/fit_sun.py` (commits `b888783`, `159982f` progress output, `be856e1` optional `--zbuf-radius`). For each
+candidate sun direction s, it builds an orthographic shadow map of the opaque Gaussians more than 5 cm above the ground
+plane (2 cm cells, dilated by 1 cell) and predicts which ground receivers are shadowed. It scores IoU against the
+receivers' own multi-view SDDNet votes (every 2nd frame, z-buffer visibility, at least 5 views, shadow if 50% or more of
+votes). The search runs over a 5 deg grid, then 1 deg, then 0.25 deg. Uncertainty = angular radius of fine-grid directions
+within 0.005 IoU of the best. Hold-out = refit on each half of the receivers, split through the centre. Self-test (box +
+pole on a plane, true sun elevation 38 / azimuth 127, 10% label noise): fitted 38.25 / 126.75, **error 0.35 deg**; same
+on the laptop.
+
+**Ground truth.** The user supplied a sun calculator readout: altitude 55.51 deg, azimuth 172.57 deg (sunrise 07:16:00,
+culmination 13:14:48, sunset 19:13:08). The video metadata confirms the time and place: creation_time
+2026-09-28T16:58:11Z (12:58:11 EDT), GPS +32.0482 -081.0601. An independent NOAA calculation gives 55.5 / 172.6 deg.
+
+**First run on IMG_6556** (`--centre 0.713 1.091 0.464 --radius 3.0`, out `exports/IMG_6556_sun/`, 10 min 47 s, almost
+all of it the vote pass over about 325 frames with all 2.9M opaque Gaussians in the z-buffer):
+fitted **elevation 57.0 deg vs true 55.51 deg (error +1.5 deg)**. Uncertainty radius 3.1 deg; the two hold-out half-fits
+agree within 0.4 deg. In `sun_fit.png` the chair's predicted shadow footprint overlaps the observed one almost exactly,
+including the gap under the seat. Overall IoU is only 0.14, because scattered grass blades and floaters more than 5 cm
+above the plane cast small false shadows across the lawn. They lower the score but don't move the fit.
+Azimuth can't be checked against 172.57 deg: the splat has no north reference.
+
+Problem found and fix (stage 2):
+1. **The terminal looked frozen for 10+ min.** Python block-buffers stdout when piped to `tee`, and the vote pass printed
+   nothing until the end. Fix: run with `python -u`; the script now prints progress every 25 frames. Optional
+   `--zbuf-radius` limits the view z-buffer to nearby Gaussians for speed.
+Next: sensitivity runs (`--cell 0.03`, `--radius 2.0`, `--occluder-min` about 11 cm) and the azimuth relative to the camera path.
