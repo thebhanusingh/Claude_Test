@@ -1165,7 +1165,7 @@ shadow detector on these labels would be training: held until the user approves 
 | before | 0.38 | 63% | 99.9% |
 | epoch 1 | 0.55 | 74% | 97.6% |
 | epoch 2 | 0.60 | 77% | 97.6% |
-| epoch 3 | 0.61 | - | ~97.5% |
+| epoch 3 | 0.61 | 79% | 97.5% |
 | epoch 4 | 0.64 | 80% | 97.4% |
 
 Overlays (frames 601, 649): the whole dark backrest arc and the shaded inner sides are now marked, the sunlit middle
