@@ -1125,3 +1125,23 @@ check there.
 Reading: ground shadow and part-on-part shadows are good enough for stage 5. The backrest front (near-grazing sun,
 slats partly shadowing each other) needs a soft sun amount (n.s times sun visibility) or a check against image
 brightness rather than a yes/no flag.
+
+### Stage 4b: shadow on the chair from photo brightness (laptop, 2026-10-13)
+The user chose to focus on shadows on the chair itself (the stage 4 weak spot). `scripts/detect_object_shadow.py`
+(laptop, untracked at the time), about 11 s per run, no training.
+1. Each chair Gaussian is looked up in every photo that sees it (front-most surfaces only; about 128 of 163 frames),
+   and the median brightness is taken.
+2. The chair is one plastic, so brightness is mostly lighting. The histogram is bimodal: sunlit about 0.3-0.5, shaded
+   about 0.02-0.04 (linear), a ratio of about 13x, matching the sun/sky ratio measured earlier on the grass. Split at
+   the Otsu threshold.
+3. Clean-up: majority vote over the 15 nearest Gaussians in the same cluster (changed 4.6% of labels).
+Result: 45% of the chair in shadow. Per cluster: under-seat and inner legs (6, 7, 11, 13) 83-95% shadow; seat front
+edge and arm tops (5, 8, 12) 0-3%; backrest (0, 2, 4) mixed, 39-69%, which matches the part-lit backrest in the photos.
+Overlays: frame 263 (front) shows the dark arc on the upper backrest marked shadow and the lit band below it marked lit;
+frame 317 (three-quarter) agrees too.
+Cross-checks: vs the independent geometry prediction (stage 4), precision 0.76, IoU 0.54, accuracy 71%. vs SDDNet,
+IoU 0.29: SDDNet calls only 18% of the chair shadowed and misses chair shadows in the overlays (dark navy plastic).
+Weak spots: thin slats (front/back faces mix in projection, which adds brightness noise); grazing-lit surfaces can be
+as dark as shade (geometry can separate those); one chair, one scene.
+Next: combine brightness (decides) with geometry (tie-break at grazing angles and on thin parts). Fine-tuning the 2D
+shadow detector on these labels would be training: held until the user approves it.
