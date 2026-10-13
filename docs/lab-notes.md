@@ -740,6 +740,9 @@ Sections below follow the brief's five stages (1 capture/SfM, 2 sun, 3 clusterin
 Labelled test images for stages 2-4 (20 images with captions, numbers and source folders):
 [`docs/figures/2026-10-12_chair_shadow_tests/README.md`](figures/2026-10-12_chair_shadow_tests/README.md). Plain-language
 explainer: [`docs/shadow-free-explained.md`](shadow-free-explained.md).
+Word document for readers outside the field (2026-10-13): [`docs/shadow-free-process-explained.docx`](shadow-free-process-explained.docx)
+with a PDF copy, built on the laptop and ordered by the brief's stages 1-5. It replaced an earlier cloud-built version
+(commit 72cbb80, removed with its builder script).
 
 The user posted a project brief: a shadow-free splat for a single dominant light (sun) and one hero object, by
 treating shadow removal as surface-aware inpainting instead of BRDF decomposition. Five stages: (1) capture + SfM +
