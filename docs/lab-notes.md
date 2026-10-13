@@ -1203,3 +1203,10 @@ The sun/3D comparison is the less circular check: the geometry only decided the 
 labels. Its held-out agreement more than doubled (0.21 to 0.48), so the detector learned something physically
 consistent rather than only copying labels. On held-out views the new detector is more cautious (33% vs about 45%).
 Masks, brightness labels and sun geometry now largely agree on the chair. One capture only.
+
+**Code record (2026-10-13).** The eight laptop scripts behind stages 2b-4d were committed exactly as run in `c4f25c3`
+(`fit_sun_self.py`, `fit_sun_edges.py`, `shadow_visibility.py`, `shadow_overlay.py`, `detect_object_shadow.py`,
+`make_chair_targets.py`, `finetune_sddnet.py`, `sddnet_masks_ckpt.py`). Not in git by design: the fine-tuned detector
+weights (`exports/IMG_6556_sddnet_ft/sddnet_chair_ft.ckpt`, about 160 MB), large outputs (PLYs, masks), and the full
+command/output log `~/work_session.log` on Murph. Each run folder keeps its own `stats.json` / `sun.json` with the
+exact parameters.
