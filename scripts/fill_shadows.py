@@ -56,6 +56,10 @@ def main():
     ap.add_argument("--plane-from", type=Path)
     ap.add_argument("--min-opacity", type=float, default=0.05)
     ap.add_argument("--attach-dist", type=float, default=0.04)
+    ap.add_argument("--fallback-pct", type=float, default=80.0,
+                    help="continuous: percentile of the object's brightness used for surfaces with no sunlit part")
+    ap.add_argument("--surface-ref", action="store_true",
+                    help="continuous: use the surface-wide lit level as a floor for the local lit level")
     ap.add_argument("--dark-full", type=float, default=0.3, help="continuous: local/lit ratio below which gain is full")
     ap.add_argument("--dark-none", type=float, default=0.6, help="continuous: local/lit ratio above which no gain")
     ap.add_argument("--graze", type=float, default=0.1, help="|n.s| below this: geometry label decides")
@@ -213,9 +217,16 @@ def main():
             rn, _ = donors_for(si, si, grain[si], floor=0.02)
             R = np.percentile(L[rn], a.ref_pct, axis=1)
             a.k = ka
-            fb = np.percentile(L[si], a.ref_pct) < 0.5 * glob_ref
+            R_surf = np.percentile(L[si], a.ref_pct)
+            if a.surface_ref:
+                # large shadows (the backrest arc) fill whole along-grain neighbourhoods, so the local lit level comes
+                # out too low; the surface-wide lit level is a floor (only matters where the Gaussian is clearly dark)
+                R = np.maximum(R, R_surf)
+            fb = R_surf < 0.5 * glob_ref
             if fb:
-                R = np.full(len(si), glob_ref)
+                # no sunlit part on this surface (faces away / under the seat): borrow the object's lit level, at a
+                # lower percentile so these surfaces don't end up brighter than the sunlit plastic
+                R = np.full(len(si), np.percentile(L, a.fallback_pct))
                 fallback[si] = True
             # only clearly darker neighbourhoods are raised: full gain when L_s/R < --dark-full, none above --dark-none
             q = L_s / np.maximum(R, 1e-6)

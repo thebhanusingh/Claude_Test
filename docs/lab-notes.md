@@ -1308,3 +1308,23 @@ render panel) in `docs/figures/2026-10-12_chair_shadow_tests/s5_fix_*.jpg`.
   of the backrest is lighter but visible; under-seat surfaces (fallback) partly too bright.
 - Next: the arc. Two hypotheses to check: part of its darkness sits in the view-dependent SH bands (the fill only
   scales them), or its along-grain neighbourhood is mostly shadow so the lit level R comes out too low.
+
+**Dark-arc fix (laptop, 2026-10-13).** Close-ups in `docs/figures/2026-10-12_chair_shadow_tests/s5_arc_*.jpg`
+(`s5_arc_00263.jpg`, `..._00317.jpg`, `..._00649.jpg`: photo | original | before arc fix | after arc fix;
+`s5_arc2_00263.jpg`, `..._00317.jpg`: photo | original | arc fix | arc fix with `--fallback-pct 40`).
+- Cause: the second hypothesis. The arc's along-grain neighbourhood is mostly shadow, so the local lit level R came out
+  far too low: the median gain on the arc was 2.9x where about 16x was needed to reach the sunlit part of the same
+  slats. View-dependent colour was ruled out: the darkness is in the base colour (DC term), not the higher SH bands.
+- Fix, `--surface-ref`: the surface-wide lit level (same cluster) is used as a floor for the local lit level, so a
+  Gaussian deep in a long shadow still sees how bright its surface is in the sun. The arc went from 6% to 53% of the
+  brightness of the lit band above it (`exports/IMG_6556_fill_continuous_sref`).
+- Side effect: the fallback surfaces (no sunlit part: under the seat, inside the legs) became too light, shadowed
+  median 0.28 vs lit 0.20, because the fallback level (80th percentile of the whole object) is brighter than those
+  surfaces would be even in sun.
+- Fix, `--fallback-pct 40`: fallback surfaces use the object's 40th percentile instead. Shadowed median now 0.168 vs
+  lit 0.195 (26% of the shadowed Gaussians on fallback; clusters 6, 7, 11, 13).
+- Final settings: `--mode continuous --include-unclustered --surface-ref --ref-k 300 --gain-smooth 3
+  --fallback-pct 40`; output `exports/IMG_6556_fill_continuous_sref_fb40`.
+- Still open: the arc's outline is faint but still visible at the top of the backrest; filled areas are a little flatter
+  and paler blue than the sunlit plastic in places; the under-seat level is a guess (no sunlit reference on those
+  surfaces); thin slats (front and back faces interfere); the chair's shadow on the grass is not filled yet.
