@@ -1279,3 +1279,29 @@ Open problems, in order: (1) blotchy / mottled fill, because the shadow labels a
 Gaussians are filled differently (needs 3D label smoothing and blending across shadow edges); (2) colour and
 brightness not an exact match to the sunlit plastic; (3) thin slats (front and back faces interfere); (4) the chair's
 shadow on the grass is not filled (chair only in this test). Next: fixing the mottling (approved 2026-10-13).
+
+**Blotchy-fill fix, first round (laptop, 2026-10-13).** Same script, new options; close-ups (chair region of each
+render panel) in `docs/figures/2026-10-12_chair_shadow_tests/s5_fix_*.jpg`.
+- `--soft`: shadow labels cleaned in 3D first (majority vote within 0.04 units on the same surface, 2 passes, flipped
+  12.9% of labels), then feathered to a 0-1 shadow amount over 0.02 units; donors only from clearly lit Gaussians;
+  fill (ratio or copied colour) averaged along the grain (4 passes) and blended by the shadow amount. With
+  `--donor-min 0.5` the shadowed median goes 0.028 -> 0.244 vs lit 0.235 (the first test overshot or fell short).
+  Seat, arms and legs much smoother; backrest still blotchy; fallback for 14% of filled Gaussians
+  (`exports/IMG_6556_fill_copy_soft`, `exports/IMG_6556_fill_ratio_soft2`; close-ups `s5_fix_soft_00263.jpg`,
+  `s5_fix_soft_00317.jpg`: photo | original | soft copy | soft ratio).
+- Main cause of the blotches found: the labelled set holds only the 24,445 clustered, opaque chair Gaussians.
+  Another 18,262 Gaussians on the chair (unclustered or semi-transparent, opacity > 0.05, within 0.04 units of a
+  labelled one) were never repainted and kept the baked shadow colour. `--include-unclustered` (with `--crop`,
+  `--plane-from`) adds them, each taking the cluster and grain of its nearest labelled Gaussian: 42,707 in total.
+- `--mode continuous` (the adjacent idea applied directly, no yes/no labels): per Gaussian, along the grain on the
+  same surface, local level L_s = median brightness of the 16 nearest; lit level R = 80th percentile over the
+  `--ref-k` nearest (300); gain = R / L_s, full when L_s/R < 0.3, none above 0.6, capped at 20x, smoothed in log space
+  along the grain (3 passes); colour multiplied by the gain, so fine texture is kept and lit areas are left alone.
+  Surfaces with no sunlit part (lit level < half the object's) use the object's lit level (fallback; clusters 6, 7,
+  11, 13; 26% of the shadowed Gaussians).
+- Result (`exports/IMG_6556_fill_continuous_all`; close-ups `s5_fix_continuous_00263.jpg`, `..._00317.jpg`:
+  photo | original | clustered Gaussians only | all Gaussians on the chair): the least blotchy so far; legs, arms, seat
+  and inner sides look like even plastic with texture and natural blue kept. Still open: the dark arc across the top
+  of the backrest is lighter but visible; under-seat surfaces (fallback) partly too bright.
+- Next: the arc. Two hypotheses to check: part of its darkness sits in the view-dependent SH bands (the fill only
+  scales them), or its along-grain neighbourhood is mostly shadow so the lit level R comes out too low.
