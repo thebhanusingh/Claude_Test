@@ -1,6 +1,6 @@
 # Shadow-free Gaussian splats: the pipeline explained
 
-*Plain-language companion to `docs/lab-notes.md`. Scene: IMG_6556, an Adirondack chair on grass in sunlight, filmed
+*Plain-language companion to `docs/lab-notes.md`. All 20 test images with captions: [figures README](figures/2026-10-12_chair_shadow_tests/README.md). Scene: IMG_6556, an Adirondack chair on grass in sunlight, filmed
 on a phone on 2026-09-28 at 12:58 local time. Status as of 2026-10-13. The numbers and settings for every run are in the
 lab notes.*
 
@@ -57,6 +57,18 @@ the visibility test couldn't tell a slat's front face from its back face, so the
 **Not done yet:** the brief also suggests using shading gradients (how brightness changes with surface angle) as a
 second cue.
 
+![Figure 2.1: first fit, everything casts. Observed, predicted, agreement (57.0 deg)](figures/2026-10-12_chair_shadow_tests/s2_01_sun_fit_all_casters.jpg)
+*Figure 2.1: first fit, everything casts. Observed, predicted, agreement (57.0 deg)*
+
+![Figure 2.2: only the chair casts (55.0 deg)](figures/2026-10-12_chair_shadow_tests/s2_02_sun_fit_chair_only.jpg)
+*Figure 2.2: only the chair casts (55.0 deg)*
+
+![Figure 2.4: outline scoring (56.3 deg)](figures/2026-10-12_chair_shadow_tests/s2_04_sun_boundary_fit.jpg)
+*Figure 2.4: outline scoring (56.3 deg)*
+
+![Figure 2.6: final fit with grass-tip height (55.08 deg vs true 55.51)](figures/2026-10-12_chair_shadow_tests/s2_05_sun_boundary_fitted_grass_offset.jpg)
+*Figure 2.6: final fit with grass-tip height (55.08 deg vs true 55.51)*
+
 ## Stage 3: Grouping blobs into surfaces, with a grain direction (done)
 
 **What:** split the chair's blobs into continuous surfaces (seat, each backrest slat group, arms, legs), and find
@@ -71,6 +83,12 @@ the direction each blob is *stretched* in: training stretches blobs along visibl
 one group. Fixed by comparing against the group's running average and only trusting normals that two methods agree on.
 **Result:** the chair splits into its real parts (normals within 12-21 deg per part). Checked against the photos: the
 blob grain matches the photo texture direction to a median of **9 deg**, where a random guess gives 44 deg.
+
+![Figure 3.1: the chair split into surfaces, one colour per surface](figures/2026-10-12_chair_shadow_tests/s3_01_chair_clusters.jpg)
+*Figure 3.1: the chair split into surfaces, one colour per surface*
+
+![Figure 3.2: grain vs the real photo (green = within 20 deg)](figures/2026-10-12_chair_shadow_tests/s3_02_grain_vs_photo_interior.jpg)
+*Figure 3.2: grain vs the real photo (green = within 20 deg)*
 
 ## Stage 4: Which blobs are in shadow (done, with additions)
 
@@ -99,6 +117,18 @@ everywhere.
 the lit blobs around it, within about 30 cm, on the same chair, *and* its colour still matches theirs, so dark paint
 isn't mistaken for shadow. Finding: shaded plastic is measurably bluer (lit only by blue sky), a real shadow signature.
 Result: 44.5% of the chair in shadow, consistent with 4.2, and it should do better on multi-coloured objects.
+
+![Figure 4.1: sun-geometry prediction, front view (red shadow, cyan lit)](figures/2026-10-12_chair_shadow_tests/s4_01_geometry_front.jpg)
+*Figure 4.1: sun-geometry prediction, front view (red shadow, cyan lit)*
+
+![Figure 4.2: chair brightness splits into a sunlit and a shaded group](figures/2026-10-12_chair_shadow_tests/s4_04_brightness_histogram.jpg)
+*Figure 4.2: chair brightness splits into a sunlit and a shaded group*
+
+![Figure 4.4: retrained detector vs original on a frame it never saw](figures/2026-10-12_chair_shadow_tests/s4_11_retrained_detector_649.jpg)
+*Figure 4.4: retrained detector vs original on a frame it never saw*
+
+![Figure 4.5: the user's adjacent brightness-and-colour method, front view](figures/2026-10-12_chair_shadow_tests/s4_07_user_adjacent_method_front.jpg)
+*Figure 4.5: the user's adjacent brightness-and-colour method, front view*
 
 ## Stage 5: Repainting the shadows (next, not started)
 

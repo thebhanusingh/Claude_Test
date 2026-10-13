@@ -734,6 +734,10 @@ splat (training's sky model), not added by the conversion. Trimming them is offe
 
 ## Shadow-free splat plan (brief received 2026-10-12)
 
+Labelled test images for stages 2-4 (20 images with captions, numbers and source folders):
+[`docs/figures/2026-10-12_chair_shadow_tests/README.md`](figures/2026-10-12_chair_shadow_tests/README.md). Plain-language
+explainer: [`docs/shadow-free-explained.md`](shadow-free-explained.md).
+
 The user posted a project brief: a shadow-free splat for a single dominant light (sun) and one hero object, by
 treating shadow removal as surface-aware inpainting instead of BRDF decomposition. Five stages: (1) capture + SfM +
 3DGS, (2) sun direction from cast-shadow geometry and shading, (3) surface clustering with a grain direction per
