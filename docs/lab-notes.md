@@ -1174,3 +1174,16 @@ capture (shows it can learn the pattern, not that it generalises); 2.6% of off-c
 improvement); both old and new detectors call the red chair in the background shadow (dark/saturated objects); it
 inherits the 3D labels' errors on thin slats. Note: re-scoring stage 4 against masks from this detector would be
 circular, since it was trained on the same 3D labels. The real test is a new capture.
+
+### Stage 4d: the user's adjacent brightness-and-colour method for chair-shadow detection (laptop, 2026-10-13)
+`detect_object_shadow.py --classify adjacent`, output `exports/IMG_6556_chairshadow_adj` (overlays frames 263, 317).
+Per chair Gaussian: neighbours within about 30 cm; the bright end of their brightness is the "lit" reference; shadow if
+below 0.3x that reference and the chromaticity still matches the lit neighbours (same plastic, not dark paint). A fully
+dark neighbourhood (under the seat) is compared with the bright end of the same colour over the whole chair.
+- Colour signature: dark spots differ in chromaticity from lit neighbours twice as much as lit spots do (0.054 vs
+  0.025), shifted bluer because shade is lit only by the sky. The colour check allows for that shift.
+- Neighbourhood size: at 19 cm part of the backrest arc was missed (its neighbourhood is mostly dark); 30 cm catches it.
+- Result at 30 cm: 44.5% of the chair in shadow; vs the sun/3D prediction IoU 0.52, accuracy 69%; 92% identical to
+  the global Otsu split (expected on a one-colour chair). Per part: under-seat and inner legs 84-92%, arm tops and seat
+  front 0-7%, backrest mixed.
+The method's advantage should show on multi-colour objects (wood grain, paint), where a whole-object split fails.
