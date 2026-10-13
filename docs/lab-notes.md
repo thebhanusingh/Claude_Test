@@ -1243,5 +1243,39 @@ exact parameters.
 
 ### Stage 5: orientation-guided inpainting
 
-Not started. Approved 2026-10-13: fill each shadowed Gaussian from lit Gaussians of the same stage-3 cluster, along the
-grain (same surface and lit, not brightest nearby).
+**First fill test (laptop, 2026-10-13).** `scripts/fill_shadows.py` on the IMG_6556 chair. Inputs: the adjacent
+brightness-and-colour labels (`exports/IMG_6556_chairshadow_adj_r04/chair_shadow.npz`; near the terminator,
+|signed normal . sun| < 0.1, the sun-geometry label decides) and the stage-3 clusters and per-Gaussian grain
+(`exports/IMG_6556_clusters_chair_r30agree_v3/clusters.npz`). Only colour (all SH coefficients) changes; geometry and
+opacity are copied; the input splat is untouched.
+
+Rule (from the brief: same surface and lit, not brightest nearby): for each shadowed chair Gaussian, the 8 nearest LIT
+Gaussians of the SAME cluster, in an anisotropic distance where offsets across the grain cost 4x offsets along it
+(4k Euclidean candidates re-ranked), weighted by 1/distance.
+- `--mode copy`: the Gaussian takes the donors' weighted mean SH.
+- `--mode ratio`: texture-preserving; the Gaussian keeps its own colour variation and is multiplied (linear RGB) by
+  donors' mean / mean of its shadowed neighbours along the grain (same cluster); higher SH bands from the donors.
+- `--donor-min 0.7`: donors must be at least 0.7x the surface's median lit brightness. Without it (first try,
+  `exports/IMG_6556_fill_copy`) dim edge-of-shadow "lit" donors left the fill at 0.074 median brightness vs 0.262 lit.
+- Fallback: clusters with fewer than 50 usable lit Gaussians have no lit counterpart on the same surface and borrow
+  from the object's lit Gaussians nearest along the grain (breaks the same-surface rule; reported). Here clusters 11
+  and 13 (under / inside the chair), 12.5% of the shadowed Gaussians.
+
+| run | shadowed Gaussians | median brightness of shadowed (linear) before -> after | lit median | fallback |
+|---|---|---|---|---|
+| copy, no donor filter (`exports/IMG_6556_fill_copy`) | 11,287 of 24,445 (46.2%) | 0.026 -> 0.074 | 0.262 | 2.7% |
+| copy, donor-min 0.7 (`exports/IMG_6556_fill_copy_d07`) | 11,287 | 0.026 -> 0.229 | 0.262 | 12.5% |
+| ratio, donor-min 0.7 (`exports/IMG_6556_fill_ratio_d07`) | 11,287 | 0.026 -> 0.226 | 0.262 | 12.5% |
+
+Each fill takes about 2 s; outputs per run: `splat_fill.ply` (full scene), `chair_before.ply` / `chair_after.ply`
+(chair only, for SuperSplat), `stats.json`, `fill.npz`. Renders from the real cameras with
+`scripts/render_splat_compare.py` (gsplat, scale 0.5) in `exports/IMG_6556_fill_compare`; committed copies:
+`docs/figures/2026-10-12_chair_shadow_tests/s5_compare_frame_00263.jpg`, `..._00317.jpg`, `..._00540.jpg`,
+`..._00649.jpg` (each: real photo | original splat | copy fill | ratio fill).
+
+What the renders show: the dark arc across the upper backrest and the shaded inner legs are mostly lifted, to about
+87% of sunlit brightness. Copy looks flatter and slightly too light blue; ratio keeps more of the plastic texture.
+Open problems, in order: (1) blotchy / mottled fill, because the shadow labels are speckled and neighbouring
+Gaussians are filled differently (needs 3D label smoothing and blending across shadow edges); (2) colour and
+brightness not an exact match to the sunlit plastic; (3) thin slats (front and back faces interfere); (4) the chair's
+shadow on the grass is not filled (chair only in this test). Next: fixing the mottling (approved 2026-10-13).
