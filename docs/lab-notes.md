@@ -1176,7 +1176,7 @@ inherits the 3D labels' errors on thin slats. Note: re-scoring stage 4 against m
 circular, since it was trained on the same 3D labels. The real test is a new capture.
 
 ### Stage 4d: the user's adjacent brightness-and-colour method for chair-shadow detection (laptop, 2026-10-13)
-`detect_object_shadow.py --classify adjacent`, output `exports/IMG_6556_chairshadow_adj` (overlays frames 263, 317).
+`detect_object_shadow.py --classify adjacent`. First try (19 cm) in `exports/IMG_6556_chairshadow_adj`; final (30 cm) in `exports/IMG_6556_chairshadow_adj_r04` (overlays frames 263, 317, 422, 540; chair_shadow_debug.ply; chair_shadow.png brightness vs sun angle; stats.json).
 Per chair Gaussian: neighbours within about 30 cm; the bright end of their brightness is the "lit" reference; shadow if
 below 0.3x that reference and the chromaticity still matches the lit neighbours (same plastic, not dark paint). A fully
 dark neighbourhood (under the seat) is compared with the bright end of the same colour over the whole chair.
