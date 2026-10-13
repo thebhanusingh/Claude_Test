@@ -1187,3 +1187,19 @@ dark neighbourhood (under the seat) is compared with the bright end of the same 
   the global Otsu split (expected on a one-colour chair). Per part: under-seat and inner legs 84-92%, arm tops and seat
   front 0-7%, backrest mixed.
 The method's advantage should show on multi-colour objects (wood grain, paint), where a whole-object split fails.
+
+**Retrained detector on all 650 frames (laptop, 2026-10-13).** Masks `exports/IMG_6556_shadow_masks_ft` (64 s);
+originals untouched. Masks turned into per-Gaussian chair votes with the tight visibility test, then compared with the
+adjacent brightness/colour labels and the sun/3D prediction:
+
+| masks | chair shadow share | vs brightness labels (IoU / acc) | vs sun/3D prediction (IoU / acc) |
+|---|---|---|---|
+| old, all frames | 18% | 0.30 / 66% | 0.25 / 57% |
+| new, all frames | 42% | 0.63 / 80% | 0.56 / 73% |
+| old, held-out 553-649 | 15% | 0.22 / 62% | 0.21 / 55% |
+| new, held-out 553-649 | 33% | 0.55 / 77% | 0.48 / 70% |
+
+The sun/3D comparison is the less circular check: the geometry only decided the near-grazing 16% of the training
+labels. Its held-out agreement more than doubled (0.21 to 0.48), so the detector learned something physically
+consistent rather than only copying labels. On held-out views the new detector is more cautious (33% vs about 45%).
+Masks, brightness labels and sun geometry now largely agree on the chair. One capture only.
