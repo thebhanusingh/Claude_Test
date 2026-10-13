@@ -1145,3 +1145,29 @@ Weak spots: thin slats (front/back faces mix in projection, which adds brightnes
 as dark as shade (geometry can separate those); one chair, one scene.
 Next: combine brightness (decides) with geometry (tie-break at grazing angles and on thin parts). Fine-tuning the 2D
 shadow detector on these labels would be training: held until the user approves it.
+
+### Stage 4c: combined chair labels + SDDNet fine-tune (laptop, 2026-10-13)
+1. **Combined labels:** brightness label kept, except near the shadow edge where the sun is near grazing (16% of chair
+   Gaussians); there the geometry decides. Result: 46% of the chair in shadow.
+2. **Targets** (`exports/IMG_6556_chair_targets`, 325 frames, 18 s): original SDDNet mask everywhere, chair labels
+   projected onto the chair, a 3 px ring around the chair outline and pixels far from any projected point marked
+   ignore, median-filtered. On the chair the targets say 50% shadow (SDDNet: 35%).
+3. **Fine-tune** (`scripts/finetune_sddnet.py`, laptop, untracked at the time): from the SBU checkpoint, shadow-mask
+   output only, 4 epochs, lr 2e-5, batch 4, 512 px, normalisation statistics frozen, 2 min 36 s on the RTX 4070.
+   Train frames 1-519, held-out frames 553-649 (49 frames), 16-frame gap. New checkpoint
+   `exports/IMG_6556_sddnet_ft/sddnet_chair_ft.ckpt`; `sbu.ckpt` untouched. This was the first training step in
+   stage 4; the user approved it ("lets try").
+
+| held-out | chair IoU | chair accuracy | off-chair agreement with old masks |
+|---|---|---|---|
+| before | 0.38 | 63% | 99.9% |
+| epoch 1 | 0.55 | 74% | 97.6% |
+| epoch 2 | 0.60 | 77% | 97.6% |
+| epoch 4 | 0.64 | 80% | 97.4% |
+
+Overlays (frames 601, 649): the whole dark backrest arc and the shaded inner sides are now marked, the sunlit middle
+band and arm tops stay lit; ground shadows look unchanged. Limits: one chair, one scene, held-out frames from the same
+capture (shows it can learn the pattern, not that it generalises); 2.6% of off-chair pixels changed (not verified as
+improvement); both old and new detectors call the red chair in the background shadow (dark/saturated objects); it
+inherits the 3D labels' errors on thin slats. Note: re-scoring stage 4 against masks from this detector would be
+circular, since it was trained on the same 3D labels. The real test is a new capture.
