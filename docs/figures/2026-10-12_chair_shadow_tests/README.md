@@ -2,7 +2,7 @@
 
 Key images from the laptop tests, downsized to 1600 px wide, each with its label burned in. Numbers and full
 details are in `docs/lab-notes.md` (sections Stage 2, 3, 4, 4b, 4c, 4d). Sun reference: 55.51 deg elevation
-(GPS + capture time). Stage 4d is the user's own adjacent brightness-and-colour method.
+(GPS + capture time).
 
 ## Stage 3: surface clustering and grain
 

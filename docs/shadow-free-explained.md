@@ -113,7 +113,7 @@ and checked on frames held out from training. Its agreement with the sun geometr
 0.48, so it learned something physically consistent. Caveat: one scene, so this shows it can learn, not that it works
 everywhere.
 
-**4.5 The user's method: adjacent brightness and colour.** A blob is in shadow if it is much darker (under 0.3x) than
+**4.5 Adjacent brightness and colour.** A blob is in shadow if it is much darker (under 0.3x) than
 the lit blobs around it, within about 30 cm, on the same chair, *and* its colour still matches theirs, so dark paint
 isn't mistaken for shadow. Finding: shaded plastic is measurably bluer (lit only by blue sky), a real shadow signature.
 Result: 44.5% of the chair in shadow, consistent with 4.2, and it should do better on multi-coloured objects.
@@ -127,8 +127,8 @@ Result: 44.5% of the chair in shadow, consistent with 4.2, and it should do bett
 ![Figure 4.4: retrained detector vs original on a frame it never saw](figures/2026-10-12_chair_shadow_tests/s4_11_retrained_detector_649.jpg)
 *Figure 4.4: retrained detector vs original on a frame it never saw*
 
-![Figure 4.5: the user's adjacent brightness-and-colour method, front view](figures/2026-10-12_chair_shadow_tests/s4_07_user_adjacent_method_front.jpg)
-*Figure 4.5: the user's adjacent brightness-and-colour method, front view*
+![Figure 4.5: adjacent brightness-and-colour detection, front view](figures/2026-10-12_chair_shadow_tests/s4_07_user_adjacent_method_front.jpg)
+*Figure 4.5: adjacent brightness-and-colour detection, front view*
 
 ## Stage 5: Repainting the shadows (next, not started)
 

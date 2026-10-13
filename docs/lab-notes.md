@@ -734,6 +734,9 @@ splat (training's sky model), not added by the conversion. Trimming them is offe
 
 ## Shadow-free splat plan (brief received 2026-10-12)
 
+Sections below follow the brief's five stages (1 capture/SfM, 2 sun, 3 clustering + orientation, 4 visibility,
+5 inpainting), numbered n.m in run order. Steps not in the brief are marked [addition].
+
 Labelled test images for stages 2-4 (20 images with captions, numbers and source folders):
 [`docs/figures/2026-10-12_chair_shadow_tests/README.md`](figures/2026-10-12_chair_shadow_tests/README.md). Plain-language
 explainer: [`docs/shadow-free-explained.md`](shadow-free-explained.md).
@@ -774,7 +777,14 @@ what stage 5 should use (seen in the synthetic sphere below).
 - **First real test:** IMG_6556 (it has masks, `shadow_frac` and baseline O for later comparison), cropped to one chair
   with `--crop`. A dedicated hero-object capture is the user's call.
 
-### Stage 3 prototype: `scripts/cluster_surfaces.py` (2026-10-12, cloud)
+### Stage 1: capture and SfM
+
+Done before the brief: IMG_6556 video, COLMAP poses, splatfacto-big splat `exports/IMG_6556/splat.ply` (2.9M
+Gaussians, COLMAP coordinates). See the IMG_6556 rows earlier in these notes.
+
+### Stage 3: surface clustering and orientation
+
+#### 3.1 Prototype: `scripts/cluster_surfaces.py` (2026-10-12, cloud)
 
 Synthetic check (`--selftest`): 15,613 Gaussians: 4 x 4 ground with grain along x and its left half darkened like a
 shadow, a 0.8 m box with vertical grain on the sides and grain along y on top, a sphere with grain along its meridians;
@@ -793,6 +803,8 @@ Next (laptop, no training, needs the user's go-ahead): run on `exports/IMG_6556/
 view `clusters_debug.ply` and `orientation_debug.ply`, and record whether seat, back and legs form separate clusters,
 whether the shadow on the chair splits anything, and how flat/coherent the grass is. Planned metric for grain without
 labels: compare each cluster's projected grain with the image structure-tensor direction in a few frames.
+
+#### 3.2 Chair runs (laptop, 2026-10-12)
 
 **First real run: IMG_6556 chair (2026-10-12, laptop, no training).** Script from `claude/project-thread-txhi4k`,
 conda env `gsplat` (numpy 1.26.4, scipy 1.15.3); laptop selftest PASSED in 1.0 s. Commands were run in a visible tmux
@@ -865,6 +877,8 @@ Open for stage 3: (1) check the 73% of members that come from attachment (for ex
 against their cluster for attached flat Gaussians, or a visual check per part); (2) validate the grain against the
 image structure tensor in a few frames; (3) repeat on a second object.
 
+#### 3.3 Attachment and grain checks against the photos
+
 **Attachment and grain checks (2026-10-12, laptop; scripts `1b0b942` and `check_grain.py`).**
 Attachment (`--attach-angle`, rerun of (f) as `..._r30agree_v3` without and `..._r30agree_att30` with a 30 deg limit):
 of the 4,457 flat Gaussians that are attached after growing, only 7% face within 30 deg of their cluster normal
@@ -900,7 +914,9 @@ gave `syntax error near unexpected token '}'`. The user spotted it in the visibl
 (C-u) before typing, never send while the pane is busy, and wait for each command's done marker. Typing in that pane while
 Claude works gets wiped, so use a second tmux window (Ctrl-b c) for manual commands.
 
-### Stage 2: sun direction (2026-10-12)
+### Stage 2: sun estimation
+
+#### 2.1 First fit: all casters, area IoU (2026-10-12)
 
 `scripts/fit_sun.py` (commits `b888783`, `159982f` progress output, `be856e1` optional `--zbuf-radius`). For each
 candidate sun direction s, it builds an orthographic shadow map of the opaque Gaussians more than 5 cm above the ground
@@ -933,7 +949,7 @@ Next: sensitivity runs (`--cell 0.03`, `--radius 2.0`, `--occluder-min` about 11
 5.45 deg (245 tied directions). Error vs truth +2.5 deg, inside its own uncertainty. The coarser cells widen the tiny false
 shadows from grass and floaters, so the score drops and the uncertainty grows; 2 cm stays the default.
 
-### Stage 2 refinements from the literature (survey, 2026-10-12)
+#### 2.1a Refinement options from the literature (survey, 2026-10-12)
 The user asked how to cut the sun-fit error. Options found, ranked by fit to our setup (none implemented yet):
 1. **Soft visibility (opacity transmittance) instead of a binary shadow map.** ShadowGS (arXiv 2601.00939) casts a ray
    from each Gaussian toward the sun and multiplies (1 - alpha) over the Gaussians it hits, as in 3DGRT/R3DG ray tracing.
@@ -957,7 +973,7 @@ The user asked how to cut the sun-fit error. Options found, ranked by fit to our
 Caveat for claims of improvement: there is one ground-truth sample so far (55.51 deg). More test cases are needed
 before reporting an error rate, for example separate fits on the other chairs in IMG_6556 and future captures with metadata.
 
-### Stage 2: chair-only casters (refinement 2, laptop, 2026-10-12)
+#### 2.2 Chair-only casters (laptop, 2026-10-12)
 The user pointed out that the grass is lit mostly by diffuse skylight, so its blades are not real sun casters. Commit
 `d7b68f1` added `--occluder-labels` (only Gaussians in a stage-3 cluster cast, here
 `exports/IMG_6556_clusters_chair_r30agree_v3/clusters.npz`) and `--score-radius` (score only ground receivers within that
@@ -982,7 +998,7 @@ Reading: the -0.5 deg of the best run is partly luck. Its half fits land at 56-5
 high). The user notes the grass was not a capture target in IMG_6556, so its reconstruction quality varies; the ground receivers sit on it. Possible causes: the ground plane is fitted to grass tops rather than soil (shadows fall a few cm lower), the
 masks may be slightly fat, or the plane is not perfectly level. Still one ground-truth sample.
 
-### Stage 2: chair self-shadow as extra evidence (refinement 3, 2026-10-12, cloud)
+#### 2.3 Chair self-shadow as extra evidence (2026-10-12; parked)
 The user asked to also use the chair's own shadow. `--self-shadow` (needs `--occluder-labels`) makes the chair's
 clustered Gaussians receivers too:
 - Mask votes for them come from the same multi-view pass, cached in `<out>/votes_self.npz`. The pass also sums the unit
@@ -1035,7 +1051,7 @@ photos. None found estimates the sun from shadows alone as done here. Candidate 
 boundary (edge distance) instead of area IoU, (2) a shading term on sun-lit chair faces, (3) front/back-aware
 self-shadow votes, (4) continuous refinement after the grid search.
 
-### Stage 2: shadow-boundary scoring (refinement 4, laptop, 2026-10-12)
+#### 2.4 Shadow-boundary scoring (laptop, 2026-10-12)
 `scripts/fit_sun_edges.py` (laptop, untracked; reuses `fit_sun.predict`, `plane_frame`, `sun_vec`). Same chair casters
 and ground votes as `exports/IMG_6556_sun_chair`. It rasterises the observed and predicted ground shadow, scores the
 symmetric chamfer distance between their boundaries, searches coarse-to-fine, polishes with Nelder-Mead, and refits
@@ -1058,6 +1074,8 @@ positive (0.8-2 deg high), which points to a systematic input bias rather than n
 4. plane tilt (the plane's up direction vs the camera up: 0.998, about 3.6 deg).
 More captures with known times will separate a constant bias from scene noise.
 
+#### 2.5 Grass-height (receiver offset) test
+
 **Receiver-height test (laptop, 2026-10-12, `--receiver-shift`, boundary score, score radius 1.2).** Hypothesis: the
 grass Gaussians sit above where the shadow shows in the photos (on the soil between blades). Positive shift = receivers
 moved down, in scene units (0.02 = about 1.5 cm):
@@ -1075,6 +1093,8 @@ sits near a 1.2 cm upward shift. The raised version also fits the outline slight
 IoU), so the data itself weakly prefers it. Effective equivalents of "receivers higher": casters (chair splats)
 slightly too tall or fat, or masks slightly wide. The capture also shows how sensitive elevation is to centimetre-level
 geometry: about 1 deg per cm here. The 3 cm run shows the curve flattens above 1.5 cm. Edge distance keeps falling with height while IoU peaks at 1.5 cm, so the two scores disagree on the best offset and the differences are under one raster cell. Height and elevation partly trade off. A joint fit of sun plus receiver offset should bound the offset (0 to 3 cm) and report the elevation spread over plausible offsets as part of the uncertainty. Selecting the offset by the fit's own score (no use of the true value) gives 54.9-55.0 deg, about 0.5-0.65 deg from truth.
+
+#### 2.6 Joint fit of sun + grass offset (stage 2 result)
 
 **Joint fit of sun + receiver offset (laptop, 2026-10-12, `fit_sun_edges.py --fit-shift LO HI STEP`, 3 min 49 s).**
 For each receiver offset from 6 cm up to 2.3 cm down, in 0.75 cm steps, it solves for the sun, keeps the offset with the
@@ -1100,7 +1120,9 @@ Stage 2 progression on IMG_6556 (true 55.51 deg): area IoU with all casters 57.0
 (-0.5, unstable across settings); boundary score 56.3 (+0.8, stable); boundary + fitted receiver offset 55.08 (-0.43,
 halves 55.25 / 55.75). Self-shadow is parked (thin-slat vote leak).
 
-## Stage 4: per-Gaussian sun visibility (first test, laptop, 2026-10-12/13)
+### Stage 4: visibility check
+
+#### 4.1 Sun-blocked test, plus facing-away test [addition] (laptop, 2026-10-12/13)
 `scripts/shadow_visibility.py` and `scripts/shadow_overlay.py` (laptop, untracked at the time). Output
 `exports/IMG_6556_shadow4_v2` (per-Gaussian flags, debug PLY of the region: red cast, blue attached, magenta both;
 photo overlays). About 15 s per run with cached votes.
@@ -1130,8 +1152,8 @@ Reading: ground shadow and part-on-part shadows are good enough for stage 5. The
 slats partly shadowing each other) needs a soft sun amount (n.s times sun visibility) or a check against image
 brightness rather than a yes/no flag.
 
-### Stage 4b: shadow on the chair from photo brightness (laptop, 2026-10-13)
-The user chose to focus on shadows on the chair itself (the stage 4 weak spot). `scripts/detect_object_shadow.py`
+#### 4.2 [Addition] Shadow on the chair from photo brightness (laptop, 2026-10-13)
+Focus on shadows on the chair itself (the stage 4 weak spot). `scripts/detect_object_shadow.py`
 (laptop, untracked at the time), about 11 s per run, no training.
 1. Each chair Gaussian is looked up in every photo that sees it (front-most surfaces only; about 128 of 163 frames),
    and the median brightness is taken.
@@ -1150,7 +1172,7 @@ as dark as shade (geometry can separate those); one chair, one scene.
 Next: combine brightness (decides) with geometry (tie-break at grazing angles and on thin parts). Fine-tuning the 2D
 shadow detector on these labels would be training: held until the user approves it.
 
-### Stage 4c: combined chair labels + SDDNet fine-tune (laptop, 2026-10-13)
+#### 4.3 / 4.4 [Addition] Combined chair labels and detector fine-tune (laptop, 2026-10-13)
 1. **Combined labels:** brightness label kept, except near the shadow edge where the sun is near grazing (16% of chair
    Gaussians); there the geometry decides. Result: 46% of the chair in shadow.
 2. **Targets** (`exports/IMG_6556_chair_targets`, 325 frames, 18 s): original SDDNet mask everywhere, chair labels
@@ -1179,7 +1201,7 @@ improvement); both old and new detectors call the red chair in the background sh
 inherits the 3D labels' errors on thin slats. Note: re-scoring stage 4 against masks from this detector would be
 circular, since it was trained on the same 3D labels. The real test is a new capture.
 
-### Stage 4d: the user's adjacent brightness-and-colour method for chair-shadow detection (laptop, 2026-10-13)
+#### 4.5 Adjacent brightness-and-colour detection (laptop, 2026-10-13)
 `detect_object_shadow.py --classify adjacent`. First try (19 cm) in `exports/IMG_6556_chairshadow_adj`; final (30 cm) in `exports/IMG_6556_chairshadow_adj_r04` (overlays frames 263, 317, 422, 540; chair_shadow_debug.ply; chair_shadow.png brightness vs sun angle; stats.json).
 Per chair Gaussian: neighbours within about 30 cm; the bright end of their brightness is the "lit" reference; shadow if
 below 0.3x that reference and the chromaticity still matches the lit neighbours (same plastic, not dark paint). A fully
@@ -1191,6 +1213,8 @@ dark neighbourhood (under the seat) is compared with the bright end of the same 
   the global Otsu split (expected on a one-colour chair). Per part: under-seat and inner legs 84-92%, arm tops and seat
   front 0-7%, backrest mixed.
 The method's advantage should show on multi-colour objects (wood grain, paint), where a whole-object split fails.
+
+#### 4.4b [Addition] Retrained detector on all frames
 
 **Retrained detector on all 650 frames (laptop, 2026-10-13).** Masks `exports/IMG_6556_shadow_masks_ft` (64 s);
 originals untouched. Masks turned into per-Gaussian chair votes with the tight visibility test, then compared with the
@@ -1208,9 +1232,16 @@ labels. Its held-out agreement more than doubled (0.21 to 0.48), so the detector
 consistent rather than only copying labels. On held-out views the new detector is more cautious (33% vs about 45%).
 Masks, brightness labels and sun geometry now largely agree on the chair. One capture only.
 
+### Code record
+
 **Code record (2026-10-13).** The eight laptop scripts behind stages 2b-4d were committed exactly as run in `c4f25c3`
 (`fit_sun_self.py`, `fit_sun_edges.py`, `shadow_visibility.py`, `shadow_overlay.py`, `detect_object_shadow.py`,
 `make_chair_targets.py`, `finetune_sddnet.py`, `sddnet_masks_ckpt.py`). Not in git by design: the fine-tuned detector
 weights (`exports/IMG_6556_sddnet_ft/sddnet_chair_ft.ckpt`, about 160 MB), large outputs (PLYs, masks), and the full
 command/output log `~/work_session.log` on Murph. Each run folder keeps its own `stats.json` / `sun.json` with the
 exact parameters.
+
+### Stage 5: orientation-guided inpainting
+
+Not started. Approved 2026-10-13: fill each shadowed Gaussian from lit Gaussians of the same stage-3 cluster, along the
+grain (same surface and lit, not brightest nearby).
