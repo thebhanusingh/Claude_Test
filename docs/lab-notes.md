@@ -1095,3 +1095,33 @@ More captures will show whether the offset is constant (fix it once) or scene-sp
 Stage 2 progression on IMG_6556 (true 55.51 deg): area IoU with all casters 57.0 (+1.5); chair-only casters 55.0
 (-0.5, unstable across settings); boundary score 56.3 (+0.8, stable); boundary + fitted receiver offset 55.08 (-0.43,
 halves 55.25 / 55.75). Self-shadow is parked (thin-slat vote leak).
+
+## Stage 4: per-Gaussian sun visibility (first test, laptop, 2026-10-12/13)
+`scripts/shadow_visibility.py` and `scripts/shadow_overlay.py` (laptop, untracked at the time). Output
+`exports/IMG_6556_shadow4_v2` (per-Gaussian flags, debug PLY of the region: red cast, blue attached, magenta both;
+photo overlays). About 15 s per run with cached votes.
+- Sun: the stage 2 joint fit (elevation 55.07 deg). Casters: chair clusters only.
+- Cast shadow: shadow map from the chair; chair parts only shadow other parts (not themselves through their thickness).
+- Attached shadow: normal faces away from the sun. 6,861 trusted chair Gaussians got normals signed toward the cameras
+  that see them (median 131 of 163 frames); the rest copy their nearest trusted neighbours.
+
+Scores against SDDNet mask votes:
+
+| receivers | precision | recall | IoU | accuracy | predicted / observed shadow |
+|---|---|---|---|---|---|
+| ground | 0.71 | 0.98 | 0.70 | 97% | thin extra rim |
+| chair, all | - | - | 0.25 | 57% | 53% / 18% |
+
+Per chair cluster: 84-100% agreement on the seat, arm tops and some legs (clusters 1, 5, 7, 8); 26-47% on the backrest
+front (clusters 0, 2, 4), which the masks call lit and the model calls partly shadowed. 19% of chair Gaussians are
+within about 9 deg of grazing (a 1-2 deg sun error flips them); excluding them barely changes the score. Re-collecting
+chair votes with a much tighter depth test changed little (observed shadow 18.3% vs 19.8%), so the thin-slat leak is
+not the main cause.
+Photo overlays: front view (frame 263) has the predicted ground shadow on the real one; the backrest front is lit in
+the photo except a dark arc near the top, and the model gives a red/cyan mix there. Rear view (frame 540): the back of
+the backrest is dark, the model marks it shadowed and SDDNet outlines it too, yet the vote score counts it as a miss
+because most backrest votes come from front (lit-side) views. So the chair IoU undercounts; the overlays are the better
+check there.
+Reading: ground shadow and part-on-part shadows are good enough for stage 5. The backrest front (near-grazing sun,
+slats partly shadowing each other) needs a soft sun amount (n.s times sun visibility) or a check against image
+brightness rather than a yes/no flag.
