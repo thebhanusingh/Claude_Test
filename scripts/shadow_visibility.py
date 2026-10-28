@@ -197,7 +197,7 @@ def main():
         else:
             va = argparse.Namespace(colmap=a.colmap, masks=a.masks, every=2, opaque=a.opaque, min_views=a.min_views,
                                     zbuf_scale=a.zbuf_scale, z_tol=a.revote_ztol, zbuf_radius=3.0)
-            sh, se = collect_votes(xyz, opacity, obj, va)
+            sh, se = collect_votes(xyz, opacity, obj, va)[:2]  # fit_sun now also returns the camera direction
             np.savez_compressed(vpath, rec_idx=obj, shadow=sh, seen=se)
         a.object_votes = vpath
     if a.object_votes:

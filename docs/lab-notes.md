@@ -1328,3 +1328,296 @@ render panel) in `docs/figures/2026-10-12_chair_shadow_tests/s5_fix_*.jpg`.
 - Still open: the arc's outline is faint but still visible at the top of the backrest; filled areas are a little flatter
   and paler blue than the sunlit plastic in places; the under-seat level is a guess (no sunlit reference on those
   surfaces); thin slats (front and back faces interfere); the chair's shadow on the grass is not filled yet.
+
+## Concrete comparison run: IMG_6704 and IMG_6705 (laptop, 2026-10-21)
+
+Goal: run the shadow-free pipeline as it stands (stages 1 to 5, same settings as IMG_6556) on two new outdoor
+videos and compare the numbers with IMG_6556. Both are on concrete (the user confirmed: no grass scene, comparison only).
+
+**Step 0, the inputs.** Both from `C:\Users\roach\Downloads`, iPhone 15 Pro Max, 3840x2160 at 30 fps, same driveway.
+| Video | Length | Frames | Captured (EDT) | GPS | Object | True sun (NOAA formula, start to end) |
+|---|---|---|---|---|---|---|
+| IMG_6704 | 118.3 s | 3548 | 2026-10-21 12:01:39 | +32.0481, -81.0601 (±4.7 m) | standing scarecrow bear with pumpkin | elev 44.18 to 44.35, az 156.70 to 157.33 |
+| IMG_6705 | 75.1 s | 2253 | 2026-10-21 12:04:17 | +32.0481, -81.0600 (±2 m) | seated bear in a cowboy hat | elev 44.40 to 44.50, az 157.55 to 157.96 |
+- Time is from `com.apple.quicktime.creationdate` (capture start). `creation_time` (16:22Z / 16:24Z) is about 20 min
+  later and looks like the file write time, so it was not used.
+- The photographer's own shadow is in a few frames of both clips: possible stage 4 false positives.
+
+**Repo sync.** `~/Claude_Test` was on `main`, 80 commits behind `claude/project-thread-txhi4k`. Three edited scripts
+were byte-identical to the branch (stashed: `pre-merge local edits (identical to txhi4k)`). 13 untracked stage
+scripts blocked the fast-forward. 12 were identical; `fit_sun.py` differed. All 13 were moved to
+`~/premerge_backup_20261021/scripts/` (user approved), then fast-forwarded to 0730fc7.
+
+**Stage 1, IMG_6704.** Started 12:35 in tmux `splat`: `MAX_WIDTH=1920 STOP_SPLIT=7000 ./scripts/make_splat_hq.sh
+/mnt/c/Users/roach/Downloads/IMG_6704.MOV IMG_6704` (650 frames, 30k, 1080p as the user asked), log `logs/IMG_6704_hq.log`.
+- Stage 1 result: DONE 14:27. Frames 1.5 min; COLMAP 12:37-13:37 (60 min, 49 of it mapping, CPU only; much slower than
+  IMG_6615's 12 min), **650/650 posed, one model, transforms.json 650 frames**; splatfacto-big 30k 13:40-14:26 (46 min),
+  GPU peak 2.5 GB / 83 C, RAM 10.7 GB, no errors. `exports/IMG_6704/splat.ply` 194 MB, 782,433 Gaussians exported
+  (154,327 low-opacity dropped). Config `outputs/IMG_6704/splatfacto/2026-10-21_134029/`.
+- SDDNet masks (SBU checkpoint, `sddnet_masks.py`, env `sddnet`): 650 frames in 57 s, mean shadow fraction 0.085,
+  `data/IMG_6704/shadow_masks`.
+- Ground plane: `fix_splat_shadows.py` with the IMG_6556 v8_o parameters (command in `logs/IMG_6704_shadowfix.cmd`),
+  `exports/IMG_6704_shadowfix_o`, 87 s: n = [0.0442, -0.6949, -0.7178], offset 2.8677, inliers 47.6%, up alignment 0.997.
+- Hero object: least-squares focus of the camera view rays, then the opaque column above the plane there. The bear is
+  cleanly isolated: horizontal radius <= 0.66, height 0-2.13 units (55,846 opaque Gaussians). Camera height median 2.87
+  units, distance to focus 4.0, so 1 unit is roughly 12-15 cm (assumes the phone about 40 cm off the ground; true
+  scale unknown). Crop `--crop 0.178 0.683 1.86 1.3` (centre at mid-height, includes the base and a little ground).
+- **Stage 3 with the IMG_6556 settings fails on the bear** (`cluster_surfaces.py --region-angle 30 --normal-source agree
+  --agree 30`, default `--min-size 200`; `exports/IMG_6704_clusters_r30agree`, 0.8 s). Of 80,190 kept Gaussians only
+  14,257 are flat enough for a normal and 29,564 more were dropped by the axis-vs-PCA test (median 42.6 deg apart). 3,833
+  regions grow, but only **1 cluster >= 200, and it is the ground patch** (10,605 Gaussians, coherence 0.05). The bear
+  has none, so stages 2, 4 and 5, which take the object's clusters as casters and surfaces, cannot run as on IMG_6556.
+  Diagnostic only (`/tmp`, not a result):
+
+| Run | Clusters | On the object | Object Gaussians | Object spread median (range) | Grain coherence median | Grown median |
+|---|---|---|---|---|---|---|
+| IMG_6556 chair, min 200 | 14 | 14 | 30,070 | 14.4 (12.1-20.5) | 0.73 | 480 |
+| IMG_6704 bear, min 200 | 1 | 0 | 0 | - | - | - |
+| IMG_6704 bear, min 50 | 27 | 26 | 22,396 | 18.2 (15.8-19.9) | 0.23 | 69 |
+| IMG_6704 bear, min 20 | 129 | 123 | 43,296 | 17.0 (10.7-20.2) | 0.28 | 30 |
+  Reading: the sculpted, curved figurine breaks into many small patches with weak grain, unlike the chair's flat,
+  slatted plastic. Waiting for the user's choice before going on.
+- Renders (`render_splat_compare.py`, scale 0.4): `exports/IMG_6704_compare/compare_frame_{00040,00200,00360,00520}.jpg`
+  (photo | splat | clusters min 200 | clusters min 50 diagnostic). The splat matches the photos closely. Min 200: only
+  the ground patch. Min 50: hat, head and torso split into about 26 patches; legs and boots get none. Copy of the min-50
+  debug PLY in the same folder.
+- Scale: IMG_6556 is about 1.33 units/m, IMG_6704 roughly 7-8 units/m (assumed phone height). Settings that were
+  physical sizes on IMG_6556 (detection `--adj-radius 0.4` = 30 cm, crop, `--fit-shift` scan range) are converted with
+  this ratio; sun angles do not depend on it.
+- Live terminal for the user at school (user asked): ttyd read-only on tmux `splat` (`-i 127.0.0.1`, password
+  `~/.ttyd_pass`) plus a cloudflared quick tunnel (log `~/cloudflared_ttyd.log`); not blocked this time. Stop with
+  `pkill -f "[c]loudflared tunnel"; pkill -f "[t]tyd -p"`.
+- **User chose to go on with the bear** (asked for the full bear results in the process document), so option A:
+  stage 3 at `--min-size 50`, everything else as IMG_6556. Official run `exports/IMG_6704_clusters_r30agree_ms50`:
+  27 clusters (26 on the bear, 1 ground patch). Coverage of opaque bear Gaussians by height: 0.15-0.6 (legs) 16%,
+  0.6-1.2 29%, 1.2-1.7 51%, 1.7-2.2 (hat) 37%.
+- Physical-size settings from IMG_6556 scaled by about 5.6 (cell / eps / raster 0.02 -> 0.1, occluder-min 0.05 -> 0.25,
+  z-tol 0.03 -> 0.15, ground-tol 0.1, fit-shift [-0.08, 0.03] -> [-0.45, 0.15] step 0.05; region and score radius 3.5 to
+  cover the shadow). Runner `scripts/runs/run_stage2_6704.sh`, log `logs/IMG_6704_stage2.log`.
+- **Stage 2a** (`fit_sun.py`, area IoU, `exports/IMG_6704_sun`, 50 s): 325 masked frames, 251,871 receivers, 4.9%
+  observed shadow. Best sun **elevation 15.0 deg (error -29.3)**, IoU 0.53; hold-out halves 44.5 and 46.5 deg (13.4 deg
+  apart). The full fit smears the predicted shadow out to the edge of the region: with the legs mostly missing from the
+  casters, a long shadow from the head scores as well as the right one. By hand: observed shadow about 2.4 units long
+  behind a 2.13-unit bear gives about 42 deg.
+- **Stage 2b** (`fit_sun_edges.py --fit-shift`, boundary score, `exports/IMG_6704_sun_edges_fitshift`, 196 s): 19,110
+  casters. Elevation across the offset scan 40.75-49.25 deg; lowest chamfer at the scan edge (+0.15 = receivers down
+  about 2 cm in this scene; the script's "cm" labels use IMG_6556's scale), still falling there. Final **elevation 49.25 deg
+  vs true 44.27, error +4.98 deg**, uncertainty 0.53 deg, halves 48.0 / 49.5 (10.6 deg apart, mostly azimuth), chamfer
+  0.068, IoU 0.56. Chair for comparison: -0.43 deg. Predicted outline wider than observed on one side.
+  Candidate causes (untested): incomplete casters (legs 16% clustered); offset scan range too narrow; the scale guess
+  behind the converted settings.
+- **Bug fix (2026-10-21):** `shadow_visibility.py --revote` crashed (`ValueError: too many values to unpack`): the
+  committed `fit_sun.collect_votes` returns (shadow, seen, toward) since the self-shadow work, while IMG_6556 ran against
+  the older untracked copy that returned two values. One-line fix: keep the first two (`[:2]`). Uncommitted.
+- **Grain check** (`check_grain.py`, 6 frames): interior pixels n = 10,334, grain median **32.9 deg** (rot90 53.1, random
+  44.3), 34% within 20 deg; edges n = 22,731, 28.6 deg (rot90 58.6, random 44.8). Chair: 9.1 / 5.5 deg.
+- **Stage 4a** (`shadow_visibility.py`, sun from stage 2b, `exports/IMG_6704_shadow4`): 19,110 object Gaussians; attached
+  26.3%, cast on object 57.8%, predicted shadow 69.9%; ground vs masks IoU 0.465 (chair 0.696). SDDNet marks only 0.4%
+  of the bear as shadow.
+- **Stage 4b** (`detect_object_shadow.py --classify adjacent`, `--adj-radius 2.24` = 30 cm scaled, `exports/IMG_6704_objshadow_adj`):
+  **29.5% of the bear in shadow** (chair 44.5%); vs geometry IoU 0.35, precision 0.88, recall 0.37 (chair IoU 0.52).
+  The sun + sky model fit is not physical on the bear: L_sky 0.034, L_sun 0.017, ratio 1.5 (chair 12.7). The bear is
+  painted in many colours, so brightness is mostly paint, not light.
+- **Stage 5** (`fill_shadows.py`, final IMG_6556 settings, distances scaled, `exports/IMG_6704_fill_continuous_sref_fb40`, 17 s):
+  80,978 object Gaussians (incl. 61,868 unclustered), 6,267 shadowed (7.7%); median brightness shadowed **0.022 -> 0.118,
+  lit 0.075 (overshoot about 60%)** (chair 0.026 -> 0.168, lit 0.195); 66.6% of the object raised > 1.5x; fallback for 19.9%
+  of shadowed (clusters 0, 7, 13, 18, 20, 24, 26). Renders `exports/IMG_6704_fill_compare/` (photo | original | fill):
+  shaded hat, jacket and trousers turn purple / over-saturated; ground shadow untouched (not implemented).
+  Runner `scripts/runs/run_stage345_6704.sh`, logs `logs/IMG_6704_stage345.log` (crash) and `logs/IMG_6704_stage45.log`.
+- **Process document:** new chapter 8 "Second test: a painted bear figurine on concrete (IMG_6704)" (8.1-8.8, figures 24-31,
+  side-by-side table), old chapters 8/9 renumbered 9/10, title page and summary updated. Written as a new file
+  `Shadow_Free_Splat_Process_v2.docx` / `.pdf` (29 pages) in the Windows repo folder; the original is untouched. Builder
+  script in the session scratchpad (python-docx; TOC refreshed and PDF exported with Word).
+- **User gave the bear's height: about 15-20 cm.** At 17.5 cm, 2.13 units -> about 12.2 units/m, so IMG_6556 physical
+  settings scale by about 9.1 (not 5.6). User asked to rerun the sun test only (one command at a time this time).
+  Exception: `--ground-tol` kept at 0.1 (measured concrete layer); 0.045 x 9.1 = 0.41 would include the bear's feet.
+- Sun rerun, scale 9.1 (cell / eps / raster 0.18, occluder-min 0.46, z-tol 0.27, fit-shift -0.73..0.27 step 0.09):
+  - 2a area IoU (`exports/IMG_6704_sun_s91`, 50 s): elevation **14.75 deg** (error -29.5), IoU 0.44, halves 30.6 deg apart.
+  - 2b boundary + offset (`exports/IMG_6704_sun_edges_fitshift_s91`, 195 s): elevation across the scan 44.75-55.25;
+    picked the top of the scan again (+0.26 = receivers down about 2.1 cm); final **55.25 deg, error +10.98**,
+    uncertainty 1.4, halves 48.5 / 46.75 (23.8 deg apart), chamfer 0.125, IoU 0.38. Worse than at scale 5.6 (49.25, +4.98).
+  - Reading: the cell size should follow the object's size, not metres. On a 17 cm bear a 1.5 cm cell leaves the whole
+    shadow outline only 80 raster cells (40 x 40 grid), against 151 at 0.1. Both runs choose the edge of the offset
+    scan, so the offset fit is not settled either.
+- **Ground shadow, bear 1** (user: "forgot the ground test"). The `fix_splat_shadows.py` run with the IMG_6556 "O"
+  parameters from earlier today is the ground fix: 9,330 ground Gaussians changed (8,360 at full weight), gain capped at
+  12 in red (linear RGB 12.0 / 9.6 / 6.0, luminance 9.85), lit reference luminance 0.49. Renders
+  `exports/IMG_6704_ground_compare/` (frames 40, 200, 360, 520 and 92, 289, 405, 452, 631: frames picked by largest
+  shadow mask not touching the border).
+  Measurement (scratch `ratio.py`): median linear luminance inside the frame's SDDNet mask (largest component in the lower
+  half, eroded 4 px) / ring 8-30 px outside it, grey pixels only (saturation < 0.15), 5 frames: **photo 0.07, original
+  0.16, fixed 0.58** (range 0.24-0.84). First version used the whole mask and was wrong: the mask also covers shade
+  under a parked car, which the fix (near the bear only) does not touch. 3D check on f_dc (ground within 3.5 of the
+  foot, `shadow_frac` > 0.5): 0.026 -> 0.239 vs lit 0.492, i.e. 5% -> 49%. Looks: shadow gone but a flat, slightly
+  blue-grey patch with the outline still visible; the concrete shadow (5-7% of sunlit) is too dark for a 12x cap.
+- **Document restructured on request** ("don't make comparisons yet, comparisons at the end"): chapter 8 is now bear 1 only
+  (no chair columns, side-by-side table removed, new 8.7 Ground shadow with figures 33-35, 8.8 What this test showed).
+  Comparisons go in a closing chapter after all tests. v2 docx/pdf rebuilt (29 pages, figures up to 35); link page
+  https://claude.ai/artifact/NzkYAg2SsFoSzTYzLGvxS1 updated to match (version 2).
+- **Live viewer** (user asked): `ns-viewer` for IMG_6704 started in tmux window `splat:viewer` on localhost:7007. The
+  public cloudflared tunnel to it was **blocked by auto mode** this time ("External Ingress Tunnel"; the ttyd tunnel at
+  14:3x was allowed). Instead: a private claude.ai page with a small WebGL splat renderer
+  (https://claude.ai/artifact/7eTcHiWU3R4bcUeqQSj12d): original / bear fill / ground fix, each the 300,000 most visible
+  Gaussians within 5 units of the bear (`ply_to_splat.py --n 300000 --radius 5`, same selection in all three since only
+  colour differs), packed losslessly into RGB PNGs (2048 x 1563, 8.9 MB each) because the host does not serve raw
+  binaries. Base colour only (no view-dependent SH).
+- **Concrete ground-fix tuning (user: "lets try fixing the shadows", "the concrete is bad"; viewer not wanted, ns-viewer
+  stopped).** Diagnosis of O on concrete: `--colour lum` keeps the shadow's blue cast; gain from the photo edge band (about
+  10 in luminance) is too low for a 5-8% shadow; `--ground-tol 0.045` is thinner than the concrete layer (about ±0.1).
+  - **B** `exports/IMG_6704_shadowfix_g25rgb`: as O but `--colour rgb --max-gain 25 --ground-tol 0.1`. Gain measured R 12.9,
+    G 9.6, B 6.0 (luminance 10.0); 11,064 brightened (9,911 full), 83 s. Blue cast gone.
+  - **C** `exports/IMG_6704_shadowfix_c`: as B plus `--gain 20 15 9.4` (B's channel ratios x1.55, luminance 15.7) and
+    `--lo 0.10 --hi 0.35`; target mode keeps the ceiling at the lit ground median (0.484). 11,920 brightened (9,977 full), 84 s.
+  - 8-angle renders `exports/IMG_6704_ground_angles` (O, B) and `exports/IMG_6704_ground_angles_c` (O, B, C), frames chosen
+    one per 45-deg camera azimuth bin (far cameras only; 45-135 deg has only close-ups, so 452 and 607 fill in; 160 is a
+    close-up). Measured on 7 views (scratch `ratio2.py`; shadow core vs ring of sunlit concrete, grey pixels; colour
+    error = rg-chromaticity distance x1000): median brightness photo 0.08, original 0.28, O 0.58, B 0.58, C 0.66; colour
+    error original 13, O 23, B 16, C 19. Per-view values are noisy where the 2D mask and the rendered shadow do not line up.
+  - Visually: B and C remove the blue; the patch stays flat and pale with a thin rim. A per-Gaussian gain cannot restore
+    concrete texture that was never recorded in sunlight; a texture-carrying fill (copy from nearby sunlit concrete, as
+    stage 5 does on objects) is the likely next step.
+- **Texture fill T (2026-10-26, user: "try texture fill and see").** New `fix_splat_shadows.py --fill texture` (clone stamp,
+  ground only; uncommitted): one in-plane shift (24 directions x 0.25..6 units) moves the shadow patch onto lit ground;
+  each shadowed splat takes DC + SH from the lit ground splat within 0.1 of its shifted spot (sources: shadow_frac < 0.1,
+  opaque, lit-ground chromaticity within the colour gate), blended by the shadow weight; misses try the next shortest
+  shift, then gain. Same selection as C. `exports/IMG_6704_shadowfix_tex`, 87 s: 183,715 lit sources, 11,920 targets,
+  shift [-1.08, 0.63] (1.25 units, about 10 cm) covers 92.5% (best 94.9% at length 5), filled 11,757, gain fallback 163.
+  Renders `exports/IMG_6704_ground_angles_tex` (original | C | T, same 8 views) and `crops_photo_orig_C_T.jpg`.
+  Visually: concrete grain and speckle now continue through the patch (C was flat pale blue-grey); a faint outline and a
+  slightly smoother, lighter patch remain. A first run crashed on a stats indexing bug (fixed).
+- **Outline blend U (user: "lets try matching the outline so that it blends").** New `--tex-feather F` (fill ground splats
+  within F outside the patch that were seen in shadow at least once and are darker than their copy, ramped by distance;
+  edge splats filled by darkness vs the copy, `clip((1 - own/copy) / 0.6)`, instead of vote weight) and `--tex-match K`
+  (copy x mean colour of the K nearest lit ground splats around the target / around the source, clipped 0.5-2).
+  `exports/IMG_6704_shadowfix_tex_u` = T + `--tex-feather 0.2 --tex-match 200`, 90 s: band 44,844, 22,649 changed; match
+  ratio median 1.0, p10/p90 0.86/1.17. Renders `exports/IMG_6704_ground_angles_tex_u` (original | T | U).
+  Measured on the renders (linear luminance vs a sunlit ring 6-20 px outside the photo mask; 5 views, frame 104 excluded
+  because the mask does not line up): edge/ring T 0.87 -> U 0.96; centre/ring 0.90 -> 0.96; fine-detail contrast inside
+  the patch vs ring T 0.73, U 0.70. Outline mostly gone; the patch stays softer than real concrete (faint smudge, worst
+  near the feet). Likely cause: the shadowed ground has fewer, larger Gaussians, so copying colour alone cannot add detail.
+- **More detail V (user: "i need a lil more detail").** New `--tex-detail G` (with `--tex-match`): copy = mean of the
+  source K lit neighbours + G x (copy - that mean), then the match ratio. `exports/IMG_6704_shadowfix_tex_v` = U +
+  `--tex-detail 1.4`, 93 s. Renders `exports/IMG_6704_ground_angles_tex_v` (original | U | V). Render measure (scratch
+  `measure_renders.py`, 5 views, medians of centre / edge / detail vs ring): original 0.06 / 0.56 / 0.37, C 0.63 / 0.85 /
+  0.44, T 0.90 / 0.87 / 0.73, U 0.96 / 0.96 / 0.70, V 0.91 / 0.95 / 0.93. V restores most fine contrast but has a slightly
+  darker, blotchy area near the feet.
+- **Process document v3** (user: "do add this on the document too"): `Shadow_Free_Splat_Process_v3.docx` / `.pdf` (31
+  pages) in the Windows repo folder, built from v2 (v2 untouched) by scratch `build_doc_v3.py`: section 8.7 gains B/C, T,
+  U, V, the table above and figures 36-38; 8.8 bullet, chapter summary box, report summary and test dates updated. TOC
+  refreshed and PDF exported with Word (Word dropped its COM connection after the export; files complete).
+- **Splat clone W (user: "still a lil smudgy. doesnt feel like concrete noise").** New `scripts/clone_ground_splats.py`
+  (uncommitted): ground-plane grid of 0.05-unit cells; shadow cells = mean shadow_frac of opaque ground splats >= 0.3,
+  closed 2 cells, holes filled, components the texture fill touched, minus the object footprint (opaque splats > 0.15
+  above the plane, grown 1 cell); a cell is filled only if the cell at the texture shift (rounded to whole cells, -22 / +12)
+  is lit ground. Deletes the ground splats in filled cells and adds copies of all ground splats from the source cells,
+  moved back by the shift (size, shape, rotation, opacity, SH kept), colour x mean of 200 nearest lit ground splats
+  around the new spot / around the source (median 0.97). Base = U. `exports/IMG_6704_clone_w/splat_clone.ply`, 2 s:
+  732 of 928 patch cells filled (196 without a clean source keep U), 11,213 removed, 11,875 added (782,433 -> 783,095).
+  Confirms the cause of the smudge: removed splats median max scale 0.0205 vs added 0.0146.
+  Renders `exports/IMG_6704_ground_angles_clone_w` (original | U | W); measure (5 views, medians): centre 0.97, edge 0.98,
+  detail 1.01 (U 0.70, V 0.93). Looks like sunlit concrete; new clone-stamp artefact: part of the real crack is copied
+  into the patch (frame 405).
+- **Crack fix (user: "fix the repeated crack").** `clone_ground_splats.py` now picks its own whole-cell shifts (24
+  directions x 0.25..5 units; first = shortest covering >= 97% of the best, then greedy up to `--max-shifts`) and never
+  copies from crack cells (`--crack R`: sunlit cells darker than R x the Gaussian-weighted (sigma 4 cells) mean of the
+  sunlit cells around them, kept only in 8-connected runs >= `--crack-min-cells`, grown by `--crack-margin`); `--map`
+  writes a top-down figure. W above was made with the first version (texture shift only, no crack test).
+  - X `exports/IMG_6704_clone_x` (`--crack 0.75`, no run filter, 6 shifts): 13,210 "crack" cells, i.e. ordinary dark
+    specks too; sources biased to plain bright concrete, detail 0.76-0.82 in 4 of 5 views. Rejected.
+  - Y `exports/IMG_6704_clone_y` (`--crack 0.6 --crack-min-cells 8 --max-shifts 6 --map`, 6 s): 1,524 crack cells; shift
+    [-24, -6] cells (1.24 units) fills 732 cells, 5 more shifts 25; 757 of 928 filled (171 near the feet keep U); 11,436
+    removed, 19,311 added (25.5 per cell vs 15.1 removed; added median scale 0.0120); 790,308 splats. Renders
+    `exports/IMG_6704_ground_angles_clone_y` (original | W | Y); medians centre 0.97, edge 0.98, detail 0.87 (W 1.01).
+    No copied crack in any view; a mild darker stain from the source area in the middle; lighter rim at the feet (frame 452).
+  - Map bug fixed: the texture fill also touched small shadow spots elsewhere on the driveway (cloned too, harmless),
+    which made the first map cover the whole driveway; it now crops to the largest patch.
+- **Research paper (user: "the paper should be research oriented with each step and the mathematics behind explained.
+  and add photos").** `Shadow_Free_Splat_Research_Paper.docx` / `.pdf` (28 pages) in the Windows repo folder; v3 untouched.
+  Abstract, introduction with contributions, background and notation, method with 33 numbered native Word equations
+  (every stage, written from the scripts: votes, RANSAC plane, PCA/agree normals, region growing, structure-tensor grain,
+  sun parameterisation, orthographic shadow map, IoU, chamfer, receiver offset, signed normals, sun+sky model, the
+  user's adjacent rule (credited), BCE fine-tuning, anisotropic donors, copy/ratio/continuous fills, gain, colour clone
+  stamp, blend/match/detail, geometry clone stamp with crack test and greedy shifts, render metrics), the two experiments
+  reported separately (cross-scene comparison deferred), discussion, conclusion, 17 references, parameter appendix.
+  44 figures (all 38 from v3, plus pipeline diagram, U|W and W|Y crops, splat-size histogram, clone map, metrics chart)
+  and 7 tables. Built by scratch `paper/build_paper.py` (python-docx; equations as UnicodeMath) + `finish_paper.ps1`
+  (Word COM: build-up, TOC, PDF). Word gotcha: a bare "max"/"min" in a sub/superscript is read as a function and
+  swallowed the next paragraph's start; labels are now quoted as upright text, and a check confirms all 207 text
+  paragraphs survive. `clone_ground_splats.py` now also writes clone_index.npz (removed / copied-from indices).
+
+## Bear 2, IMG_6705: one command from video to shadow-free splat (laptop, 2026-10-27)
+
+Goal (user): run the whole pipeline on bear 2 as ONE command, to see whether it works on a new scene. Sun from the
+video metadata. Reported on its own (no comparisons with other scenes yet). Ground shadow removed too.
+
+- Terminal: new tmux window `splat:bear2` (session `splat`), Windows Terminal window "Bear 2 (tmux splat:bear2)";
+  the read-only ttyd + cloudflared view from 2026-10-21 was still running, so no new tunnel.
+- Repo: `~/Claude_Test` `main` = `claude/project-thread-txhi4k` (fetched, nothing to merge); bear 1 uncommitted scripts kept.
+- Metadata: GPS +32.0481 -81.0600 (2 m), capture start 2026-10-21 12:04:17 EDT, 75.1 s. **No compass heading** in the
+  file (all tags checked), so only the sun's elevation can be used in the scene; its compass azimuth cannot be placed
+  without knowing north in the splat. User: the bear's back faces roughly north (exact angle unknown); used only as a check.
+- Plan: elevation fixed from metadata, azimuth + receiver offset fitted from the shadow outline; our own free fits
+  (area IoU and boundary) logged against the metadata elevation.
+- Bear 2 height (user, iPhone Measure app): **16 +- 0.5 cm**. Lengths = bear 1 final values x K, K = bear 2 units/m / 12.18
+  (bear 1: 2.13 units / 17.5 cm).
+- New / changed code (uncommitted):
+  - `scripts/sun_from_metadata.py`: NOAA solar position from the QuickTime GPS + creationdate (with refraction), start /
+    mid / end. Check: IMG_6704 44.20 -> 44.36 / 156.70 -> 157.34, IMG_6705 44.42 -> 44.52 / 157.55 -> 157.96 (earlier
+    values 44.18-44.35 / 156.70-157.33 and 44.40-44.50 / 157.55-157.96; difference = refraction, about 0.02 deg).
+  - `scripts/find_object.py`: hero object without hand work (least-squares focus of the camera axes, opaque column above
+    the plane, 8-connected footprint component nearest the focus), crop and scale. Check on bear 1: height 2.1317 units,
+    radius 0.654, crop `0.1779 0.6833 1.8598 1.3002`, 55,892 Gaussians (hand values 2.13, 0.66, `0.178 0.683 1.86 1.3`, 55,846).
+  - `fit_sun_edges.py --fix-elevation E`: elevation held; grid, offset scan and Nelder-Mead over azimuth only. Code test
+    on bear 1 data (E = 44.27): runs, 17 s.
+  - Stage 3 flags confirmed: rerunning bear 1 with `--region-angle 30 --normal-source agree --agree 30 --min-size 50`
+    gives labels identical to `exports/IMG_6704_clusters_r30agree_ms50`.
+  - Runner `scripts/runs/run_full_6705.sh` (log `logs/IMG_6705_full.log`): 0 metadata sun; 1 make_splat_hq (650 frames,
+    1920 wide, splatfacto-big 30k, STOP_SPLIT 7000); 1b SDDNet masks; 2a ground plane (bear 1 "O"); 2b find_object -> crop, K;
+    2c stage 3; 2d grain check; 3a fit_sun votes + own IoU fit; 3b own boundary fit (free); 3c boundary fit at the metadata
+    elevation (used); 4a visibility; 4b adjacent detection; 5a ground texture fill + outline blend ("U"); 5b object
+    continuous fill on top of it; 5c ground splat clone stamp with crack check ("Y") -> `exports/IMG_6705_final/splat_shadowfree.ply`;
+    6 renders photo | original | shadow-free.
+- **Run started 18:45:51 EDT (user pressed Enter)** in `splat:bear2`. Stage 0: elevation 44.42 -> 44.52 (mid 44.47), azimuth 157.55 -> 157.96 (mid 157.75).
+- Timing (user: "lets time this run too"; laptop on max power this time, Windows plan "Acer"): step times from the runner timestamps; machine load every 30 s by new `scripts/sample_load.py` -> `logs/IMG_6705_load.csv` (CPU %, cores > 50 %, top process, RAM, GPU util / memory / temperature / power). Started 18:55. Frames 18:45:52-18:47:00 (68 s); COLMAP features done 18:47:41 (GPU).
+- Matching 18:47:41-18:57:30 (9 min 49 s, GPU 83-92 %, 87 C, 111 W); mapping from 18:57:30, CPU only, colmap about 7-8 cores. User asked why mapping cannot use more cores (incremental SfM is serial) and why global mapping is not used (never switched on; `colmap4` env has `global_mapper`). **Pending, user: "dont queue it but remind me when we are done"**: after this run, offer a GLOMAP vs incremental timing test on the same bear 2 frames and matches.
+- COLMAP: mapping 18:57:30-19:38:07 (40.6 min, CPU, colmap mean about 4.9 cores, peak 8.3), intrinsics refine to 19:42:43 (4.6 min); **650/650 posed**; ns-process-data done 19:42:50 (COLMAP total 55.8 min). Pose fix from 19:42:52.
+- Pose fix 19:42:52-19:44:37; training splatfacto-big 30k 19:44:37-20:27:49 (43.2 min; late steps about 95 ms, GPU 93 %, 71 C, 81 W, 2.4 GB); export 20:27:49-20:28:16: `exports/IMG_6705/splat.ply` 178 MB, **719,172 Gaussians** (127,180 low-opacity dropped of 846,352). Stage 1 total 18:45:52-20:28:16 = 1 h 42 min. Masks from 20:28:16.
+- Masks 20:28:16-20:29:09 (650 in 49 s, mean shadow fraction 0.090). Ground plane (O) 20:29:09-20:30:32: n = [0.0006, -0.6958, -0.7183], offset 2.8535, up alignment 0.997. **find_object**: one component, 36,106 opaque Gaussians, **height 1.494 units**, radius 0.799, crop `0.1182 1.2286 1.7426 1.1375`; 16 cm -> **9.34 units/m, K = 0.767**; camera height median 2.65 units = 28 cm, distance to focus 4.10 = 44 cm. Stage 3 (0.7 s): 56,109 kept, 24 clusters >= 50, 25,439 attached. Grain check (interior): median 33.0 deg (rot90 52.8, random 43.6), 33.5% within 20 deg.
+- **Sun.** 3a fit_sun votes + area IoU (45 s): 325 masked frames, 229,813 receivers, 3.2% in shadow; elevation 52.00, scene azimuth 285.00, IoU 0.466, halves 36.25 deg apart. 3b boundary, free (about 3 min): 15,182 casters; elevation **51.50 (+7.03 vs metadata 44.47)**, azimuth 289.75, chamfer 0.111, IoU 0.448, halves 49.0 / 21.5 (37.0 deg apart); receiver shift +0.115 = top of the scan. 3c boundary at the metadata elevation (used): azimuth **291.07** (free fit 1.32 deg away), chamfer 0.120, IoU 0.464, uncertainty 0.54 deg, halves 13.0 deg apart; receiver shift -0.345 = bottom of the scan (receivers 3.7 cm UP, not physical on concrete), so the offset fit is not settled (it only steers the azimuth fit; downstream stages use the direction only). True north at scene azimuth 88.83 (from 291.07 + compass 157.75).
+- Stage 4a visibility (8 s): sun [0.6663, -0.6714, -0.3243]; 15,182 object / 121,911 ground Gaussians; attached 13.9%
+  (trusted 17.5%); cast on object 39.7%; object in shadow 44.2%; ground cast 11.1%. Ground vs masks: observed 3.95%,
+  predicted 11.5%, precision 0.343, recall 1.0, IoU 0.343: the predicted ground shadow is about 3x too big (the sun
+  figure shows the same: predicted outline wider than observed on all sides). Untested causes: shadow-map cell / eps
+  (0.077 / 0.077 units after scaling) coarse for a 1.49-unit object; receiver offset at the scan edge.
+- Stage 4b adjacent detection (37 s): 30.3% of the bear in shadow; vs geometry IoU 0.466 (precision 0.781, recall 0.536).
+  SDDNet marks 0% of the bear. Sun + sky fit: sky 0.055, sun 0.087, ratio 2.6. **Scaling problem:** `--adj-radius`
+  2.24 x 0.767 = 1.72 units (18 cm) is larger than the bear (radius 0.80), so every Gaussian has all 15,182 as
+  neighbours and the "adjacent" rule compares with the whole bear, not the surroundings.
+- Stage 5a ground fill U (88 s): 13,659 targets; texture shift [0, 1.342] (1.34 units, 14 cm) covers 94.7% (best 97.0%
+  at length 4.4); filled 13,431, gain fallback 228; feather band 42,904, 19,377 changed; match ratio median 0.98
+  (p10/p90 0.83/1.16); lit ground luminance 0.475.
+- Stage 5b object fill (11 s), on top of U: 55,461 object Gaussians (incl. unclustered), 4,699 shadowed (8.5%); median
+  linear brightness shadowed 0.038 -> 0.115, lit 0.136; **52.8% of the object raised > 1.5x**; fallback for 46.3% of the
+  shadowed (clusters 17, 18, 21, 22 and others "no sunlit part").
+- Stage 5c clone stamp Y (3 s): cell 0.038; 1,606 shadow cells, patch 938, **811 filled**, 127 unfilled (keep U); 1,242
+  crack cells near the patch excluded as sources; shifts [-24, 6] cells (0.95 units) 792 cells, then 17, 1, 1; removed
+  7,080, added 14,437 (8.7 vs 17.8 per cell; median scale 0.0198 -> 0.0117); 719,172 -> 726,529 Gaussians.
+  Final: `exports/IMG_6705_final/splat_shadowfree.ply`.
+- Stage 6 renders `exports/IMG_6705_final_compare/compare_frame_{00082,00244,00407,00569}.jpg` (photo | original | shadow-free).
+  Visually: **ground shadow gone** in all views, concrete grain and cracks continue through the patch; a soft grey
+  smudge remains right at the base (the 127 unfilled cells next to the footprint). **Bear fill failed:** the whole bear
+  turns orange / amber and glassy, over-saturated, hat blotchy; consistent with 52.8% raised and the adjacent radius
+  covering the whole bear.
+- Shadow-behind-back check (by eye, frames 244 and 569): the shadow falls behind the bear and a little to one side, as
+  expected for a south-facing bear with the sun at SSE. Consistent with the user's "back faces N".
+- **Run total 18:45:51-20:37:38 = 1 h 51 min 47 s, one command, no hand values, no crash.** Step times: frames 68 s;
+  COLMAP features 41 s (copy + extract), matching 9 min 49 s, mapping 40 min 37 s, refine 4 min 36 s, pose fix 1 min 45 s;
+  training 43 min 12 s; export 27 s; masks 53 s; plane 83 s; find_object 1 s; stage 3 3 s; grain 3 s; sun 3a 62 s,
+  3b 3 min 11 s, 3c 15 s; 4a 8 s; 4b 37 s; 5a 88 s; 5b 11 s; 5c 4 s; renders 3 s.
+  Load (sampler, 30 s): matching GPU 87%, 112 W, max 87 C, colmap 2.8 cores; mapping GPU 0%, colmap mean 5.0 cores (max
+  8.3), RAM max 7.8 GB; refine 6.7 cores (max 12.3); training GPU 91%, mean 78 W, max 72 C, 2.9 cores, RAM max 11.2 GB;
+  stages 1b-6 mean 18 cores (max 32, all cores), GPU 3%.
+- Open: object-fill scaling (adjacent radius vs object size); ground over-prediction in 4a; receiver offset at the scan
+  edge; smudge at the base. Reminder owed to the user: GLOMAP vs incremental timing test (not queued).
+- After the run (user, 2026-10-27 evening): asked why the bear fill failed (explained: adjacent radius > bear, paint read as shade); user restated the goal of sun tracking = light response of surface blobs in 3D; proposed geometry-driven fill (sun-blocked + facing + sun/sky ratio from the concrete). User: "there has to be a better way of splatting so we know what the surface is" -> options 2DGS (gsplat 1.4.0 has the 2DGS rasteriser), DN-Splatter, surfels/PGSR/GOF; quality concern -> two-splat idea (normal splat for looks, 2DGS only as geometry reference) with a held-out quality check. **User will decide tomorrow**; meanwhile will try filming with better angles (filming tips given). Still pending: commit of the new scripts, GLOMAP timing test (reminder), geometry-driven fill.
+- 2026-10-28: user chose the **surface test (2DGS)** next; asked how to manage the long conversation. Wrote `docs/status.md` (one-page hand-off: state, failures, next step, pending decisions, house rules) for a fresh session.

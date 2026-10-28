@@ -14,6 +14,10 @@ something to detect and correct:
 3. The brightening gain (per RGB channel, linear light) is estimated from the photos:
    median ratio of lit to shadowed pixels in thin bands either side of each mask edge,
    which is roughly the sun/sky ratio for the same surface. --gain overrides it.
+4. --fill texture (ground only): instead of brightening, copy colour and SH from sunlit
+   ground splats at one in-plane shift (clone stamp), chosen as the shortest shift that
+   lands the shadow patch on lit ground. A gain cannot bring back texture the shadow never
+   recorded (5-8% of sunlit on concrete); copying keeps the grain. Gain is the fallback.
 
 Only f_dc / f_rest change; geometry, opacity and every other PLY property are copied.
 Works on any standard 3DGS PLY that lives in the COLMAP model's world coordinates
@@ -227,7 +231,30 @@ def main():
     ap.add_argument("--dark-gate", action="store_true",
                     help="with --ground-only: also scale the vote weights by how dark each Gaussian is between the lit and "
                          "shadowed ground medians, so sunlit splats near a mask edge are left alone; lets --lo/--hi go lower")
+    ap.add_argument("--fill", choices=["gain", "texture"], default="gain",
+                    help="gain: brighten each shadowed splat by the gain; texture (needs --ground-only): clone stamp, copy "
+                         "colour and SH from the sunlit ground splat at one in-plane shift that moves the shadow patch onto "
+                         "nearby lit ground, so the concrete keeps a texture; splats with no lit source fall back to gain")
+    ap.add_argument("--tex-radius", type=float, default=0.1,
+                    help="texture fill: a shifted position must have a lit ground splat within this radius (scene units)")
+    ap.add_argument("--tex-step", type=float, default=0.25, help="texture fill: shift lengths are tried in this step")
+    ap.add_argument("--tex-max-shift", type=float, default=6.0, help="texture fill: longest shift tried (scene units)")
+    ap.add_argument("--tex-lit", type=float, default=0.1, help="texture fill: sources need shadow_frac below this")
+    ap.add_argument("--tex-cover", type=float, default=0.97,
+                    help="texture fill: use the shortest shift that covers at least this share of the best coverage")
+    ap.add_argument("--tex-feather", type=float, default=0.0,
+                    help="texture fill: also fill ground splats within this distance outside the patch (scene units) that "
+                         "were seen in shadow at least once and are darker than their copy, fading out with distance, and "
+                         "fill edge splats by how much darker they are than the copy rather than by vote weight. 0 = off")
+    ap.add_argument("--tex-match", type=int, default=0,
+                    help="texture fill: scale each copy by the mean colour of the K nearest lit ground splats around the "
+                         "target over the same around its source, so the patch takes the local brightness. 0 = off")
+    ap.add_argument("--tex-detail", type=float, default=1.0,
+                    help="texture fill with --tex-match: scale each copy's difference from the mean of its source's K "
+                         "lit neighbours by this factor, to restore fine contrast lost to the larger shadowed splats")
     args = ap.parse_args()
+    if args.fill == "texture" and not args.ground_only:
+        raise SystemExit("ERROR: --fill texture needs --ground-only")
 
     t0 = time.time()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -396,17 +423,114 @@ def main():
         ch_gain = gain[None, :] * (per_splat / g_lum)[:, None]
     lin = lin0 * (1 + weight[:, None] * (ch_gain - 1))
     lin = lin / np.maximum(lin.max(1, keepdims=True), 1.0)  # clip without shifting hue
+    rest = sorted((k for k in names if k.startswith("f_rest_")), key=lambda k: int(k.split("_")[-1]))
+    texture = None
+    src = np.full(n, -1)
+    if args.fill == "texture":
+        from scipy.spatial import cKDTree
+        a = np.cross(n_g, [1.0, 0, 0] if abs(n_g[0]) < 0.9 else [0, 1.0, 0])
+        a /= np.linalg.norm(a)
+        b = np.cross(n_g, a)
+        p2 = np.stack([xyz @ a, xyz @ b], 1)
+        lin_dc = srgb_to_linear(np.clip(dc0 * SH_C0 + 0.5, 0, 1))
+        lit = near & valid & (frac < args.tex_lit) & (opacity > args.opaque)
+        if args.colour_gate > 0:
+            # sources must look like lit ground too (keeps the bear's feet and other objects out)
+            chrom = lin_dc[:, :2] / np.maximum(lin_dc.sum(1, keepdims=True), 1e-6)
+            lit &= np.linalg.norm(chrom - np.median(chrom[lit], 0), axis=1) <= args.colour_gate
+        li = np.nonzero(lit)[0]
+        ti = np.nonzero(weight > 0)[0]
+        tree = cKDTree(p2[li])
+        angles = np.deg2rad(np.arange(0, 360, 15))
+        lengths = np.arange(args.tex_step, args.tex_max_shift + 1e-9, args.tex_step)
+        shifts = np.array([(m * np.cos(t), m * np.sin(t)) for m in lengths for t in angles])
+        cover, hits = np.zeros(len(shifts)), []
+        for s_i, s in enumerate(shifts):
+            d, j = tree.query(p2[ti] + s, k=1, distance_upper_bound=args.tex_radius)
+            ok = np.isfinite(d)
+            cover[s_i] = ok.mean()
+            hits.append(np.where(ok, li[np.minimum(j, len(li) - 1)], -1))
+        best = int(np.argmax(cover))
+        chosen = next(i for i in range(len(shifts)) if cover[i] >= args.tex_cover * cover[best])  # shortest first
+        src[ti] = hits[chosen]
+        order = np.argsort(np.linalg.norm(shifts, axis=1), kind="stable")
+        # splats the chosen shift misses: shortest other shift that lands on lit ground
+        for s_i in order:
+            miss = src[ti] < 0
+            if not miss.any():
+                break
+            src[ti[miss]] = hits[s_i][miss]
+        wfill = np.where(src >= 0, weight, 0.0)
+        band = np.zeros(0, int)
+        if args.tex_feather > 0:
+            # penumbra splats just outside the patch, which the vote thresholds left dark
+            cand = np.nonzero(near & valid & (weight == 0) & (frac > 0))[0]
+            dist, _ = cKDTree(p2[ti]).query(p2[cand], k=1, distance_upper_bound=args.tex_feather)
+            band = cand[np.isfinite(dist)]
+            ramp = 1 - dist[np.isfinite(dist)] / args.tex_feather
+            for s in shifts[order]:
+                miss = src[band] < 0
+                if not miss.any():
+                    break
+                d, j = tree.query(p2[band[miss]] + s, k=1, distance_upper_bound=args.tex_radius)
+                ok = np.isfinite(d)
+                src[band[miss][ok]] = li[j[ok]]
+        gi = np.nonzero(src >= 0)[0]
+        copy = lin_dc[src[gi]]
+        ratio = None
+        if args.tex_match > 0:
+            k = min(args.tex_match, len(li))
+            _, jt = tree.query(p2[gi], k=k)
+            _, js = tree.query(p2[src[gi]], k=k)
+            mean_s = lin_dc[li[js]].mean(1)
+            ratio = np.clip(lin_dc[li[jt]].mean(1) / np.maximum(mean_s, 1e-4), 0.5, 2.0)
+            copy = np.maximum(mean_s + args.tex_detail * (copy - mean_s), 0) * ratio
+        if args.tex_feather > 0:
+            # fill by how much darker a splat is than its copy: full once below 40% of it, none when as bright
+            lum_own, lum_copy = lin0[gi] @ lum_w, np.maximum(copy @ lum_w, 1e-4)
+            w_dark = np.clip((1 - lum_own / lum_copy) / 0.6, 0, 1)
+            in_band = np.isin(gi, band)
+            band_ramp = np.zeros(n)
+            band_ramp[band] = ramp
+            wfill[gi] = np.where(in_band, w_dark * band_ramp[gi], np.maximum(wfill[gi], w_dark))
+        wt = wfill[gi, None]
+        lin[gi] = (1 - wt) * lin0[gi] + wt * copy
+        rat_full = np.ones((n, 3))
+        if ratio is not None:
+            rat_full[gi] = ratio
+        filled = src >= 0
+        texture = dict(shift=shifts[chosen].round(3).tolist(), shift_length=round(float(np.linalg.norm(shifts[chosen])), 3),
+                       coverage_chosen=round(float(cover[chosen]), 4), coverage_best=round(float(cover[best]), 4),
+                       best_shift=shifts[best].round(3).tolist(), lit_sources=int(len(li)), targets=int(len(ti)),
+                       filled=int((src[ti] >= 0).sum()), filled_by_chosen_shift=int((hits[chosen] >= 0).sum()),
+                       gain_fallback=int((src[ti] < 0).sum()), feather_band=int(len(band)),
+                       feather_filled=int((wfill[band] > 0).sum()),
+                       match_ratio_median=None if ratio is None else np.median(ratio, 0).round(3).tolist(),
+                       match_ratio_p10_p90=None if ratio is None else
+                       np.percentile(ratio @ lum_w, [10, 90]).round(3).tolist())
+        print(f"texture fill: {len(li):,} lit ground sources, {len(ti):,} targets; shift {texture['shift']} "
+              f"(length {texture['shift_length']}) covers {cover[chosen]:.1%} (best {cover[best]:.1%} at "
+              f"{texture['best_shift']}); filled {texture['filled']:,}, gain fallback {texture['gain_fallback']:,}; "
+              f"feather band {len(band):,} ({texture['feather_filled']:,} changed); "
+              f"match ratio median {texture['match_ratio_median']}, p10/p90 {texture['match_ratio_p10_p90']}")
     new_rgb = np.clip(linear_to_srgb(lin), 0, 1)
     touched = weight > 0
+    if texture is not None:
+        touched = touched | (wfill > 0)
     factor = np.where(touched[:, None] & (rgb > 1e-3), new_rgb / np.maximum(rgb, 1e-3), 1.0)
     fixed = ply.copy()
     for c in range(3):
         fixed[f"f_dc_{c}"] = np.where(touched, (new_rgb[:, c] - 0.5) / SH_C0, ply[f"f_dc_{c}"]).astype(np.float32)
-    rest = sorted((k for k in names if k.startswith("f_rest_")), key=lambda k: int(k.split("_")[-1]))
     per_ch = len(rest) // 3  # f_rest is channel-major: all R coeffs, then G, then B
     for j, k in enumerate(rest):
         fixed[k] = (ply[k] * factor[:, min(j // max(per_ch, 1), 2)]).astype(np.float32)
+        if texture is not None:  # copied splats take the source's view-dependent colour too
+            c = min(j // max(per_ch, 1), 2)
+            rest_copy = ply[k][np.maximum(src, 0)] * (1.0 if ratio is None else rat_full[:, c])
+            fixed[k] = np.where(src >= 0, (1 - wfill) * ply[k] + wfill * rest_copy, fixed[k]).astype(np.float32)
     write_ply(args.out / "splat_shadowfix.ply", header, fixed)
+    if texture is not None:
+        np.save(args.out / "texture_source.npy", src.astype(np.int64))
 
     debug = ply.copy()
     red = np.array([1.0, 0.0, 0.0])
@@ -423,7 +547,7 @@ def main():
         brightened_full=int((weight >= 1).sum()), changed_gaussians=int(touched.sum()), gain_linear_rgb=gain.round(4).tolist(), gain_raw_rgb=gain_raw.round(4).tolist(), gain_luminance=round(g_lum, 4),
         lit_ref_luminance=None if lit_ref is None else round(float(lit_ref), 4),
         ceiling_luminance=None if ceiling is None else round(float(ceiling), 4), gain_source=gain_src,
-        gain_frames=len(ratios), ground_plane=ground, params={k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
+        gain_frames=len(ratios), ground_plane=ground, texture_fill=texture, params={k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
         seconds=round(time.time() - t0, 1))
     (args.out / "stats.json").write_text(json.dumps(stats, indent=2))
     print(json.dumps({k: v for k, v in stats.items() if k != "params"}, indent=2))

@@ -55,6 +55,9 @@ def main():
     ap.add_argument("--fit-shift", type=float, nargs=3, metavar=("LO", "HI", "STEP"),
                     help="also fit the receiver shift: scan LO..HI by STEP (scene units), keep the lowest chamfer")
     ap.add_argument("--true-elevation", type=float)
+    ap.add_argument("--fix-elevation", type=float,
+                    help="hold the elevation (deg above the plane) at this value, e.g. from the video's GPS + time; "
+                         "only the azimuth (and --fit-shift) is fitted")
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
@@ -134,14 +137,17 @@ def main():
             cache[key] = (cham, float((pred & obs).sum() / u) if u else 0.0)
         return cache[key]
 
+    def els(cands):  # elevations to try; a single value with --fix-elevation
+        return [a.fix_elevation] if a.fix_elevation is not None else cands
+
     def grid_search(sub=None):
         def grid(els, azs):
             return [(e, z % 360, evaluate(e, z, sub)[0]) for e in els if 1 <= e <= 89 for z in azs]
-        coarse = grid(np.arange(5, 86, 5.0), np.arange(0, 360, 5.0))
+        coarse = grid(els(np.arange(5, 86, 5.0)), np.arange(0, 360, 5.0))
         e, z, _ = min(coarse, key=lambda t: t[2])
-        mid = grid(e + np.arange(-5, 5.1, 1.0), z + np.arange(-5, 5.1, 1.0))
+        mid = grid(els(e + np.arange(-5, 5.1, 1.0)), z + np.arange(-5, 5.1, 1.0))
         e, z, _ = min(mid, key=lambda t: t[2])
-        fine = grid(e + np.arange(-1.5, 1.51, 0.25), z + np.arange(-1.5, 1.51, 0.25))
+        fine = grid(els(e + np.arange(-1.5, 1.51, 0.25)), z + np.arange(-1.5, 1.51, 0.25))
         return min(fine, key=lambda t: t[2]), mid + fine
 
     shift_profile = None
@@ -152,10 +158,10 @@ def main():
         shift_profile = []
         for sh in np.arange(a.fit_shift[0], a.fit_shift[1] + 1e-9, a.fit_shift[2]):
             state["shift"] = float(sh)
-            mid = [(e, z % 360, evaluate(e, z)[0]) for e in e0 + np.arange(-3, 3.1, 1.0) if 1 <= e <= 89
+            mid = [(e, z % 360, evaluate(e, z)[0]) for e in els(e0 + np.arange(-3, 3.1, 1.0)) if 1 <= e <= 89
                    for z in z0 + np.arange(-3, 3.1, 1.0)]
             e1_, z1_, _ = min(mid, key=lambda t: t[2])
-            fine = [(e, z % 360, evaluate(e, z)[0]) for e in e1_ + np.arange(-1, 1.01, 0.25) if 1 <= e <= 89
+            fine = [(e, z % 360, evaluate(e, z)[0]) for e in els(e1_ + np.arange(-1, 1.01, 0.25)) if 1 <= e <= 89
                     for z in z1_ + np.arange(-1, 1.01, 0.25)]
             be, bz, bc = min(fine, key=lambda t: t[2])
             e0, z0 = be, bz
@@ -173,10 +179,15 @@ def main():
     unc = max(angle_between(gs, t) for t in tied)
     print(f"grid: elevation {ge:.2f}, azimuth {gz:.2f}, chamfer {gc:.4f} units, IoU {evaluate(ge, gz)[1]:.3f}, "
           f"uncertainty {unc:.2f} deg ({len(tied)} tied) ({time.time() - t0:.0f} s)", flush=True)
-    opt = minimize(lambda p: evaluate(p[0], p[1])[0], [ge, gz], method="Nelder-Mead",
-                   options=dict(initial_simplex=[[ge, gz], [ge + 0.3, gz], [ge, gz + 0.3]], xatol=0.02, fatol=1e-5,
-                                maxiter=150))
-    oe_, oz_ = float(opt.x[0]), float(opt.x[1]) % 360
+    if a.fix_elevation is not None:
+        opt = minimize(lambda p: evaluate(a.fix_elevation, p[0])[0], [gz], method="Nelder-Mead",
+                       options=dict(initial_simplex=[[gz], [gz + 0.3]], xatol=0.02, fatol=1e-5, maxiter=150))
+        oe_, oz_ = float(a.fix_elevation), float(opt.x[0]) % 360
+    else:
+        opt = minimize(lambda p: evaluate(p[0], p[1])[0], [ge, gz], method="Nelder-Mead",
+                       options=dict(initial_simplex=[[ge, gz], [ge + 0.3, gz], [ge, gz + 0.3]], xatol=0.02, fatol=1e-5,
+                                    maxiter=150))
+        oe_, oz_ = float(opt.x[0]), float(opt.x[1]) % 360
     oc_, oi_ = evaluate(oe_, oz_)
     print(f"Nelder-Mead: elevation {oe_:.2f}, azimuth {oz_:.2f}, chamfer {oc_:.4f}, IoU {oi_:.3f} "
           f"({opt.nfev} evaluations)", flush=True)
