@@ -55,7 +55,7 @@ A longer plain-language walkthrough, written for readers who are not splatting s
 ![Chair before and after the fill](figures/chair_fill.jpg)
 <sub>First repainting test: the dark arc on the backrest is lifted. Two fill modes are compared.</sub>
 
-### Experiment 2: painted bear figurine on concrete
+### Experiment 2: painted bear figurine on concrete (bear 1)
 
 **Ground shadow:** a per-blob brightness gain lifts the shadow only to 63% of the surrounding sunlit concrete. The
 geometry clone stamp reaches 97%, with fine detail restored to 87-101% of the surrounding concrete.
@@ -66,29 +66,45 @@ A finding along the way: the residual smudge left by colour-only fills comes fro
 trained on the dark shadow are 1.7 times larger than blobs on sunlit concrete, so the fix has to replace them, not
 recolour them.
 
-### Honest negative results
+### Experiment 3: second bear figurine on concrete (latest, after the preprint)
+
+A 16 cm seated bear, run end to end with **one command in about 1 h 52 min, with no hand-set values**.
+
+**Best final result: ground shadow gone, bear keeps its real colours.**
+
+![Bear 2: photo, original splat, first fill, geometry-driven fill with ground clone stamp](figures/bear2_final_result.jpg)
+<sub>Columns: real photo, original splat, first fill (orange and glassy, failed), final geometry-driven fill + ground clone stamp. Rows: four held-out views.</sub>
+
+**Sun and shadow detection.** A flat-surfel (2DGS) copy of the scene gives reliable surface directions: 69.8% of the
+bear's blobs now have a confident direction, up from 19.7%, at near-identical image quality (PSNR 28.16 vs 28.45).
+With only the bear's own surfels allowed to cast shadows, the refitted sun is **44.97° elevation against 44.47°** from
+the video's GPS metadata, and the predicted ground shadow matches the photos with an overlap (IoU) of **0.87**.
+A fine shadow map rendered from that sun then labels every blob of the bear as lit or in shadow (70% lit, 30% shadow):
+
+![Bear 2 lit and shadow labels from the sun map](figures/bear2_sun_shadow_labels.jpg)
+<sub>Left: original splat. Right: magenta = blobs the sun cannot reach (blocked by the bear itself or on its far side); everything else is lit.</sub>
+
+**Strongest shadow removal on the object so far (fill 7):** using those labels, the hard shadows under the hat brim
+and on the back are largely removed.
+
+![Bear 2 before and after fill 7](figures/bear2_fill7_pairs.jpg)
+<sub>Each pair: original splat (left) and fill 7 (right), close-ups from four directions.</sub>
+
+**Open problem:** blobs that sat in shade store the wrong colour, so lifting their brightness exposes it (purple-grey
+under the brim, orange patches on the back). A full paint × light decomposition (R3DG) was tried twice, the second
+time with the sun fixed to our measurement, and both times baked the shadow into the paint colour. With a single
+fixed sun the shaded paint is never seen lit, so its colour has to be estimated; this is the next thing to solve.
+
+### Honest negative results (bear 1 and baselines)
 
 These are reported in full in the paper, because they show where the method stops working:
 
-- **Bear object fill failed.** On a multi-coloured, curved, sculpted figurine there is little grain to follow, and
+- **Bear 1 object fill failed.** On a multi-coloured, curved, sculpted figurine there is little grain to follow, and
   dark paint is easily mistaken for shade; the repainted hat and clothes turned purple and blue.
   ![Bear object fill failure](figures/bear_object_fill_failure.jpg)
-- **Sun from the bear's shadow** came out 4.98° high; the shadow is small and the outline grid is coarse at that scale.
+- **Sun from bear 1's shadow** came out 4.98° high; the shadow is small and the outline grid is coarse at that scale.
 - **Off-the-shelf inverse rendering does not solve it.** GS-IR kept hard sun shadows in its albedo, and
   GaussianShader relights only reflections.
-
-### Current work (after the preprint, not yet written up)
-
-A second bear (16 cm, filmed on concrete) runs end to end with one command in about 1 h 52 min, with no hand-set values.
-Since then:
-
-- A flat-surfel (2DGS) copy of the scene gives reliable surface directions: 69.8% of the bear's blobs now have a
-  confident direction, up from 19.7%, at near-identical image quality (PSNR 28.16 vs 28.45).
-- With only the object's own surfels allowed to cast shadows, the refitted sun is 44.97° elevation against 44.47° from
-  the video's GPS metadata, and the predicted ground shadow matches the photos with an overlap (IoU) of 0.87.
-- Open problem: blobs that sat in shade store the wrong colour, so brightness-only fills cannot recover the paint.
-  A full BRDF decomposition (R3DG) was tried and also baked the shadow into the paint colour; this is the next
-  thing to solve.
 
 The day-by-day record is in [docs/status.md](docs/status.md) and the full run log in [docs/lab-notes.md](docs/lab-notes.md).
 
